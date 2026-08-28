@@ -11,6 +11,10 @@ export interface DocumentForensicResult {
   }>;
 }
 
+/**
+ * Analyzes document consistency signals based strictly on actual field value mismatches
+ * and structural properties. REMOVED ALL FILENAME KEYWORD AND HARDCODED STRING SHORTCUTS.
+ */
 export function analyzeDocumentForensics(
   fileText: string,
   fileName: string,
@@ -19,33 +23,23 @@ export function analyzeDocumentForensics(
   const signals: Array<{ type: string; severity: 'LOW' | 'MEDIUM' | 'HIGH'; description: string }> = [];
   let riskScore = 0.0;
 
-  // Signal 1: Check filename tampering keywords
-  if (fileName.toLowerCase().includes('edited') || fileName.toLowerCase().includes('tampered') || fileName.toLowerCase().includes('modified')) {
-    riskScore += 0.45;
-    signals.push({
-      type: 'METADATA_SUSPICIOUS_FILENAME',
-      severity: 'HIGH',
-      description: 'Document filename indicates external PDF editor or modification utility.'
-    });
-  }
-
-  // Signal 2: Check OCR field discrepancy
+  // Signal 1: Document field mismatch against canonical record
   if (!ocrFieldMatch) {
-    riskScore += 0.50;
+    riskScore += 0.80;
     signals.push({
       type: 'FIELD_VALUE_DISCREPANCY',
       severity: 'HIGH',
-      description: 'Extracted text values conflict with canonical institutional SHA-256 fingerprint.'
+      description: 'Extracted document text values conflict with canonical institutional SHA-256 fingerprint.'
     });
   }
 
-  // Signal 3: Spacing & alignment check
-  if (fileText.includes('9.72') || fileText.includes('  ')) {
-    riskScore += 0.20;
+  // Signal 2: Check for missing structural text content
+  if (!fileText || fileText.trim().length === 0) {
+    riskScore += 0.30;
     signals.push({
-      type: 'FONT_ALIGNMENT_INCONSISTENCY',
+      type: 'EMPTY_TEXT_PAYLOAD',
       severity: 'MEDIUM',
-      description: 'Slight spacing and font kerning anomaly detected around grade / CGPA text regions.'
+      description: 'Extracted text layer is incomplete or unreadable by document parser.'
     });
   }
 
@@ -53,9 +47,9 @@ export function analyzeDocumentForensics(
   const finalRisk = Math.min(Math.max(riskScore, 0.0), 1.0);
 
   return {
-    fontConsistency: finalRisk > 0.3 ? 0.65 : 0.98,
-    layoutAlignment: finalRisk > 0.3 ? 0.70 : 0.99,
-    metadataIntegrity: finalRisk > 0.3 ? 0.50 : 0.98,
+    fontConsistency: finalRisk > 0.3 ? 0.70 : 0.99,
+    layoutAlignment: finalRisk > 0.3 ? 0.75 : 0.99,
+    metadataIntegrity: finalRisk > 0.3 ? 0.60 : 0.99,
     qrSubstitution: finalRisk > 0.7,
     overallRiskScore: finalRisk,
     signals

@@ -1,19 +1,36 @@
-import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
+
+const BCRYPT_SALT_ROUNDS = 10;
 
 /**
- * Hashes a plaintext password using SHA-256 with salt.
+ * Hashes a plaintext password using Bcrypt with cost factor 10.
  */
-export function hashPassword(password: string): string {
-  const salt = 'certiseal_sih_2026_salt_value';
-  return crypto.createHash('sha256').update(password + salt).digest('hex');
+export async function hashPassword(password: string): Promise<string> {
+  if (!password) throw new Error('Password string is required for hashing.');
+  return bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
 }
 
 /**
- * Compares a plaintext password against a password hash.
+ * Verifies a plaintext password against a Bcrypt password hash.
+ * Synchronous or async comparison supported. NO DEMO BYPASSES ALLOWED.
  */
-export function verifyPassword(password: string, hash: string): boolean {
+export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   if (!password || !hash) return false;
-  // Support both legacy demo string and hashed string
-  if (hash === 'demo' && password === 'demo') return true;
-  return hashPassword(password) === hash;
+  try {
+    return await bcrypt.compare(password, hash);
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Synchronous password verification helper for non-async call sites.
+ */
+export function verifyPasswordSync(password: string, hash: string): boolean {
+  if (!password || !hash) return false;
+  try {
+    return bcrypt.compareSync(password, hash);
+  } catch (error) {
+    return false;
+  }
 }

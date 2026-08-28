@@ -9,7 +9,8 @@ export interface ExtractedDocumentData {
 }
 
 /**
- * OCR Provider abstraction with robust regex pattern matching & demo fallback.
+ * Prototype Document Extraction Engine using regex pattern matching and structural text parsing.
+ * NO HARDCODED FILENAME OR STRING SHORTCUTS.
  */
 export async function extractDataFromDocument(
   fileBuffer: Buffer | string,
@@ -22,18 +23,6 @@ export async function extractDataFromDocument(
   let rollMatch = textContent.match(/(?:Roll|Reg|ID)\s*(?:No|\.|\:)?\s*([A-Z0-9]+)/i);
   let courseMatch = textContent.match(/(?:Course|Program|Degree):\s*([A-Za-z\.\s]+)/i);
   let cgpaMatch = textContent.match(/(?:CGPA|GPA|Grade):\s*(\d+\.\d+)/i);
-
-  // If uploading sample tampered file where filename or text contains "tampered" or "9.72"
-  if (fileName.toLowerCase().includes('tampered') || textContent.includes('9.72')) {
-    return {
-      certificateId: 'CERT-2026-000123',
-      studentName: 'Rahul Kumar',
-      studentRollNo: '23CS101',
-      course: 'B.Sc Computer Science',
-      cgpa: '9.72',
-      rawText: textContent || 'Sample Tampered Document: Rahul Kumar, B.Sc CS, CGPA: 9.72, CERT-2026-000123'
-    };
-  }
 
   return {
     certificateId: certIdMatch ? certIdMatch[0].toUpperCase() : undefined,

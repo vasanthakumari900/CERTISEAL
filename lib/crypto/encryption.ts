@@ -6,14 +6,13 @@ export interface EncryptedPayload {
   authTag: string;
 }
 
-const DEFAULT_TEST_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-
 /**
  * Retrieves the master AES-256-GCM encryption key from environment variables.
- * FAILS FAST in production if ENCRYPTION_MASTER_KEY is missing.
+ * FAILS FAST if ENCRYPTION_MASTER_KEY is missing or invalid length.
+ * NO FALLBACK KEY IS PERMITTED.
  */
 function getMasterKey(): Buffer {
-  const keyHex = process.env.ENCRYPTION_MASTER_KEY || DEFAULT_TEST_KEY;
+  const keyHex = process.env.ENCRYPTION_MASTER_KEY;
   if (!keyHex || keyHex.length < 64) {
     throw new Error(
       'CRITICAL SECURITY ERROR: ENCRYPTION_MASTER_KEY environment variable is missing or invalid. Application must fail fast.'

@@ -2,7 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 
-const AUTH_SECRET = process.env.AUTH_SECRET || 'certiseal_sih_secret_key_2026_demo_32bytes_long';
+/**
+ * Retrieves the AUTH_SECRET from environment variables.
+ * FAILS FAST if AUTH_SECRET is missing or empty.
+ */
+function getAuthSecret(): string {
+  const secret = process.env.AUTH_SECRET;
+  if (!secret || secret.trim().length === 0) {
+    throw new Error('CRITICAL SECURITY ERROR: AUTH_SECRET environment variable is missing or empty. Application must fail fast.');
+  }
+  return secret;
+}
 
 export interface UserSession {
   id: string;
@@ -18,31 +28,33 @@ export interface UserSession {
  * Creates a signed session token.
  */
 export function createSessionToken(session: UserSession): string {
+  const secret = getAuthSecret();
   const payload = Buffer.from(JSON.stringify(session)).toString('base64url');
   const signature = crypto
-    .createHmac('sha256', AUTH_SECRET)
+    .createHmac('sha256', secret)
     .update(payload)
     .digest('base64url');
   return `${payload}.${signature}`;
 }
 
 /**
- * Verifies and decodes a session token. Returns null if invalid or tampered.
+ * Verifies and decodes a session token. Returns null if invalid, missing, or tampered.
  */
 export function verifySessionToken(token: string): UserSession | null {
   if (!token || !token.includes('.')) return null;
   const [payload, signature] = token.split('.');
   
-  const expectedSignature = crypto
-    .createHmac('sha256', AUTH_SECRET)
-    .update(payload)
-    .digest('base64url');
-
-  if (signature !== expectedSignature) {
-    return null; // Tampered token
-  }
-
   try {
+    const secret = getAuthSecret();
+    const expectedSignature = crypto
+      .createHmac('sha256', secret)
+      .update(payload)
+      .digest('base64url');
+
+    if (signature !== expectedSignature) {
+      return null; // Tampered token
+    }
+
     const json = Buffer.from(payload, 'base64url').toString('utf8');
     return JSON.parse(json) as UserSession;
   } catch (e) {

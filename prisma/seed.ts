@@ -146,9 +146,9 @@ async function main() {
   });
 
   // ----------------------------------------------------
-  // CREATE DEMO USERS WITH PASSWORD HASHES
+  // CREATE DEMO USERS WITH BCRYPT PASSWORD HASHES
   // ----------------------------------------------------
-  const defaultPasswordHash = hashPassword('demo');
+  const defaultPasswordHash = await hashPassword('SIH2026MasterPass!');
 
   const superAdmin = await prisma.user.create({
     data: { name: 'Dr. Vikramaditya (Super Admin)', email: 'superadmin@certiseal.gov.in', passwordHash: defaultPasswordHash, role: 'SUPER_ADMIN' }
@@ -309,7 +309,7 @@ async function main() {
     revocationReason: 'Official cancellation due to academic misconduct and falsified project submission'
   });
 
-  console.log('Seeding completed successfully!');
+  console.log('Seeding completed successfully with Bcrypt hashed passwords!');
 }
 
 main()

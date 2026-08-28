@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireAuth, requireRole, getSession } from '@/lib/auth/session';
 import { generateCertificateHash } from '@/lib/crypto/hashing';
 import { buildCertificateCanonicalPayload } from '@/lib/crypto/canonical';
 import { signFingerprint, generateInstitutionKeyPair } from '@/lib/crypto/signatures';
 import { encryptField, decryptField } from '@/lib/crypto/encryption';
 import { appendLedgerEntry } from '@/lib/services/ledger-service';
 import { logAuditEvent } from '@/lib/services/audit-service';
+import { CertificateIssuanceSchema } from '@/lib/validation/schemas';
 
 export async function GET(req: Request) {
   try {
@@ -13,7 +15,7 @@ export async function GET(req: Request) {
     const status = searchParams.get('status');
     const type = searchParams.get('type');
     const query = searchParams.get('query');
-    const institutionId = searchParams.get('institutionId');
+    const institutionIdParam = searchParams.get('institutionId');
 
     const whereClause: any = {};
 
@@ -23,8 +25,8 @@ export async function GET(req: Request) {
     if (type && type !== 'ALL') {
       whereClause.certificateType = type;
     }
-    if (institutionId) {
-      whereClause.institutionId = institutionId;
+    if (institutionIdParam) {
+      whereClause.institutionId = institutionIdParam;
     }
 
     if (query) {
@@ -54,9 +56,21 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    // 1. Enforce Server-Side Authentication & Role Permissions
+    const session = await requireRole(req, ['FACULTY', 'INSTITUTION_ADMIN', 'SUPER_ADMIN']);
+
     const body = await req.json();
+
+    // 2. Validate input schema
+    const validated = CertificateIssuanceSchema.safeParse(body);
+    if (!validated.success) {
+      return NextResponse.json(
+        { error: 'Invalid certificate issuance payload.', details: validated.error.format() },
+        { status: 400 }
+      );
+    }
+
     const {
-      institutionId,
       studentName,
       studentRollNo,
       course,
@@ -67,9 +81,22 @@ export async function POST(req: Request) {
       marks,
       cgpa,
       graduationYear,
-      additionalMetadata,
-      actorId
-    } = body;
+      additionalMetadata
+    } = validated.data;
+
+    // 3. Enforce Server-Derived Institution Ownership (NEVER TRUST CLIENT institutionId)
+    let targetInstitutionId = session.institutionId;
+
+    if (session.role === 'SUPER_ADMIN' && body.institutionId) {
+      targetInstitutionId = body.institutionId; // Super Admin override
+    }
+
+    if (!targetInstitutionId) {
+      return NextResponse.json(
+        { error: 'FORBIDDEN: User account is not associated with an authorized issuing institution.' },
+        { status: 403 }
+      );
+    }
 
     let publicId = body.publicId ? body.publicId.trim().toUpperCase() : '';
     if (!publicId) {
@@ -78,18 +105,19 @@ export async function POST(req: Request) {
       publicId = `CERT-${year}-${randomNum}`;
     }
 
+    // 4. Duplicate ID check (Replay Prevention)
     const existing = await prisma.certificate.findUnique({
       where: { publicId }
     });
 
     if (existing) {
       await logAuditEvent({
-        actorId: actorId || 'INST_ADMIN',
-        actorRole: 'INSTITUTION_ADMIN',
-        actorName: 'Institution Admin',
+        actorId: session.id,
+        actorRole: session.role,
+        actorName: session.name,
         action: 'DUPLICATE_CERTIFICATE_ATTEMPT',
         result: 'FAILURE',
-        institutionId,
+        institutionId: targetInstitutionId,
         certificateId: publicId
       });
 
@@ -100,17 +128,16 @@ export async function POST(req: Request) {
     }
 
     let instKey = await prisma.institutionKey.findFirst({
-      where: { institutionId, status: 'ACTIVE' }
+      where: { institutionId: targetInstitutionId, status: 'ACTIVE' }
     });
 
     if (!instKey) {
       const newKeyPair = generateInstitutionKeyPair();
-      // Store encrypted private key in database with AES-256-GCM
       const encryptedKeyCiphertext = encryptField(newKeyPair.privateKeyPem);
 
       instKey = await prisma.institutionKey.create({
         data: {
-          institutionId,
+          institutionId: targetInstitutionId,
           keyVersion: 1,
           publicKey: newKeyPair.publicKeyPem,
           publicKeyFingerprint: newKeyPair.publicKeyFingerprint,
@@ -121,7 +148,7 @@ export async function POST(req: Request) {
     }
 
     const institution = await prisma.institution.findUnique({
-      where: { id: institutionId }
+      where: { id: targetInstitutionId }
     });
 
     if (!institution || (institution.status !== 'PARTICIPATING' && institution.status !== 'ACTIVE')) {
@@ -139,7 +166,7 @@ export async function POST(req: Request) {
     // Authoritative 14-field canonical payload reconstruction
     const canonicalPayload = buildCertificateCanonicalPayload({
       certificateId: publicId,
-      institutionId,
+      institutionId: targetInstitutionId,
       institutionCode: instCode,
       studentName,
       studentRollNo,
@@ -167,7 +194,7 @@ export async function POST(req: Request) {
     const certificate = await prisma.certificate.create({
       data: {
         publicId,
-        institutionId,
+        institutionId: targetInstitutionId,
         studentName,
         studentRollNo,
         encryptedStudentData,
@@ -194,7 +221,7 @@ export async function POST(req: Request) {
         version: 1,
         canonicalHash,
         digitalSignature,
-        changedBy: actorId || 'FACULTY_ISSUER',
+        changedBy: session.id,
         changeReason: 'Initial Cryptographic Issuance',
         snapshotData: canonicalPayload
       }
@@ -202,19 +229,19 @@ export async function POST(req: Request) {
 
     await appendLedgerEntry({
       certificateId: certificate.id,
-      institutionId,
+      institutionId: targetInstitutionId,
       operation: 'ISSUANCE',
-      actorId: actorId || 'FACULTY_ISSUER',
+      actorId: session.id,
       signatureRef: digitalSignature.substring(0, 32)
     });
 
     await logAuditEvent({
-      actorId: actorId || 'FACULTY_ISSUER',
-      actorRole: 'FACULTY',
-      actorName: 'Authorized Issuer',
+      actorId: session.id,
+      actorRole: session.role,
+      actorName: session.name,
       action: 'CERTIFICATE_CREATED',
       result: 'SUCCESS',
-      institutionId,
+      institutionId: targetInstitutionId,
       certificateId: publicId
     });
 
@@ -228,6 +255,7 @@ export async function POST(req: Request) {
       }
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Issuance failed' }, { status: 500 });
+    const status = error.message?.includes('UNAUTHORIZED') ? 401 : error.message?.includes('FORBIDDEN') ? 403 : 500;
+    return NextResponse.json({ error: error.message || 'Issuance failed' }, { status });
   }
 }

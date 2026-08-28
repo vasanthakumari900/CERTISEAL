@@ -1,16 +1,28 @@
+process.env.AUTH_SECRET = process.env.AUTH_SECRET || 'certiseal_sih_secret_key_2026_demo_32bytes_long';
+process.env.ENCRYPTION_MASTER_KEY = process.env.ENCRYPTION_MASTER_KEY || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hashPassword, verifyPassword } from '../lib/auth/password';
 import { createSessionToken, verifySessionToken } from '../lib/auth/session';
 import { verifySignature } from '../lib/crypto/signatures';
 
-test('Password Hashing & Verification Security', () => {
+test('Bcrypt Password Hashing & Verification Security', async () => {
   const plain = 'SIH2026MasterPass!';
-  const hash = hashPassword(plain);
+  const hash = await hashPassword(plain);
 
-  assert.notEqual(plain, hash, 'Password must never be plaintext');
-  assert.equal(verifyPassword(plain, hash), true, 'Correct password verifies');
-  assert.equal(verifyPassword('wrongpass', hash), false, 'Incorrect password fails');
+  assert.notEqual(plain, hash, 'Password must never be stored as plaintext');
+  assert.ok(hash.startsWith('$2'), 'Must be a valid bcrypt hash format');
+
+  const isValid = await verifyPassword(plain, hash);
+  assert.equal(isValid, true, 'Correct password must verify against bcrypt hash');
+
+  const isInvalid = await verifyPassword('wrongpassword', hash);
+  assert.equal(isInvalid, false, 'Incorrect password must be rejected');
+
+  // Verify demo password bypass is disabled
+  const isDemoBypassDisabled = await verifyPassword('demo', 'demo');
+  assert.equal(isDemoBypassDisabled, false, 'Plaintext demo password bypass must be disabled');
 });
 
 test('Session Token Creation & Verification Security', () => {
