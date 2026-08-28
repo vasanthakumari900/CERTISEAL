@@ -76,12 +76,16 @@ export default function QuickDemoSwitcher() {
     }
   }, []);
 
-  const switchRole = async (role: string) => {
+  const switchRole = async (targetRole: string) => {
+    const demoItem = DEMO_ROLES.find(r => r.role === targetRole) || DEMO_ROLES[3];
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role })
+        body: JSON.stringify({
+          email: demoItem.email,
+          password: 'SIH2026MasterPass!'
+        })
       });
       const data = await res.json();
       if (data.user) {

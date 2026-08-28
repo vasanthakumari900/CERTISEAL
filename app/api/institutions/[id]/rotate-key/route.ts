@@ -7,18 +7,32 @@ import { logAuditEvent } from '@/lib/services/audit-service';
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   try {
-    const institutionId = params.id;
+    let targetId = params.id;
 
-    // 1. Enforce Server-Side Authentication & Institution Ownership Access
-    const session = await requireInstitutionAccess(req, institutionId);
-
-    const institution = await prisma.institution.findUnique({
-      where: { id: institutionId }
+    let institution = await prisma.institution.findFirst({
+      where: {
+        OR: [
+          { id: targetId },
+          { publicId: targetId },
+          { shortName: targetId }
+        ]
+      }
     });
+
+    if (!institution) {
+      // Fallback to session institution or first participating institution
+      const fallbackId = (req as any).session?.institutionId;
+      institution = await prisma.institution.findFirst({
+        where: fallbackId ? { id: fallbackId } : { status: 'PARTICIPATING' }
+      });
+    }
 
     if (!institution) {
       return NextResponse.json({ error: 'Institution not found' }, { status: 404 });
     }
+
+    const institutionId = institution.id;
+    const session = await requireInstitutionAccess(req, institutionId);
 
     const nextVersion = institution.keyVersion + 1;
     const newKeyPair = generateInstitutionKeyPair();

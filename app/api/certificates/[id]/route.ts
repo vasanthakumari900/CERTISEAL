@@ -58,7 +58,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       );
     }
 
-    if (action === 'HOLD') {
+    if (action === 'HOLD' || action === 'PLACE_ON_HOLD') {
       const updated = await prisma.certificate.update({
         where: { id: cert.id },
         data: {

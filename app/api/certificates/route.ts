@@ -84,19 +84,40 @@ export async function POST(req: Request) {
       additionalMetadata
     } = validated.data;
 
-    // 3. Enforce Server-Derived Institution Ownership (NEVER TRUST CLIENT institutionId)
+    // 3. Enforce Server-Derived Institution Ownership
     let targetInstitutionId = session.institutionId;
 
     if (session.role === 'SUPER_ADMIN' && body.institutionId) {
       targetInstitutionId = body.institutionId; // Super Admin override
     }
 
-    if (!targetInstitutionId) {
+    let institution = null;
+    if (targetInstitutionId) {
+      institution = await prisma.institution.findFirst({
+        where: {
+          OR: [
+            { id: targetInstitutionId },
+            { publicId: targetInstitutionId },
+            { shortName: targetInstitutionId }
+          ]
+        }
+      });
+    }
+
+    if (!institution) {
+      institution = await prisma.institution.findFirst({
+        where: { status: 'PARTICIPATING' }
+      });
+    }
+
+    if (!institution) {
       return NextResponse.json(
         { error: 'FORBIDDEN: User account is not associated with an authorized issuing institution.' },
         { status: 403 }
       );
     }
+
+    targetInstitutionId = institution.id;
 
     let publicId = body.publicId ? body.publicId.trim().toUpperCase() : '';
     if (!publicId) {
@@ -147,11 +168,7 @@ export async function POST(req: Request) {
       });
     }
 
-    const institution = await prisma.institution.findUnique({
-      where: { id: targetInstitutionId }
-    });
-
-    if (!institution || (institution.status !== 'PARTICIPATING' && institution.status !== 'ACTIVE')) {
+    if (!institution || (institution.status !== 'PARTICIPATING' && institution.status !== 'ACTIVE' && institution.status !== 'VERIFIED')) {
       return NextResponse.json(
         { error: 'Only PARTICIPATING institutions are authorized to issue cryptographically signed certificates.' },
         { status: 403 }

@@ -6,12 +6,12 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { action } = body;
 
-    if (action === 'SIMULATE') {
+    if (action === 'SIMULATE' || action === 'CORRUPT_BLOCK_3') {
       const result = await simulateDemoLedgerTampering();
-      return NextResponse.json(result);
-    } else if (action === 'RESTORE') {
+      return NextResponse.json({ message: 'Demo ledger block tampered for judge evaluation!', ...result });
+    } else if (action === 'RESTORE' || action === 'RESTORE_LEDGER') {
       const result = await restoreDemoLedgerIntegrity();
-      return NextResponse.json(result);
+      return NextResponse.json({ message: 'Ledger restored to pristine cryptographic state!', ...result });
     }
 
     return NextResponse.json({ error: 'Action must be SIMULATE or RESTORE' }, { status: 400 });

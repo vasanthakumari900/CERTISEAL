@@ -5,7 +5,9 @@ export const GENESIS_HASH = "GENESIS_BLOCK_CERTISEAL_000000000000000000000000000
 
 export interface LedgerVerificationReport {
   isValid: boolean;
+  isIntegrityValid?: boolean;
   totalBlocks: number;
+  totalEntries?: number;
   checkedAt: string;
   firstCompromisedIndex: number | null;
   compromisedBlock: any | null;
@@ -23,6 +25,7 @@ export interface LedgerVerificationReport {
     isValid: boolean;
     timestamp: string;
   }>;
+  entries?: Array<any>;
 }
 
 /**
@@ -140,15 +143,20 @@ export async function verifyLedgerIntegrity(): Promise<LedgerVerificationReport>
     expectedPrevHash = entry.currentHash;
   }
 
+  const entriesWithCorrupted = blockReports.map(b => ({ ...b, isCorrupted: !b.isValid }));
+
   return {
     isValid: overallValid,
+    isIntegrityValid: overallValid,
     totalBlocks: entries.length,
+    totalEntries: entries.length,
     checkedAt: new Date().toISOString(),
     firstCompromisedIndex,
     compromisedBlock,
     genesisHash: GENESIS_HASH,
     tipHash: entries[entries.length - 1].currentHash,
-    blocks: blockReports
+    blocks: blockReports,
+    entries: entriesWithCorrupted
   };
 }
 

@@ -8,7 +8,6 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { email, password } = body || {};
 
-    // REQUIRE Email and Password (NO ROLE OR DEMO BYPASS PERMITTED)
     if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
       return NextResponse.json(
         { error: 'Unauthorized: Authentication requires email and password.' },
@@ -16,7 +15,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Find user in database by email
     const user = await prisma.user.findUnique({
       where: { email: email.trim().toLowerCase() },
       include: { institution: true }
@@ -26,7 +24,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unauthorized: Invalid email or password.' }, { status: 401 });
     }
 
-    // Verify password against Bcrypt hash (NO DEMO BYPASS)
     const isPasswordValid = await verifyPassword(password, user.passwordHash);
     if (!isPasswordValid) {
       return NextResponse.json({ error: 'Unauthorized: Invalid email or password.' }, { status: 401 });
