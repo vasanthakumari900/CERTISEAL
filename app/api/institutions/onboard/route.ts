@@ -1,16 +1,20 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
+import { OnboardingRequestSchema } from '@/lib/validation/schemas';
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { officerName, officerDesignation, officialDomainEmail, institutionName, officialWebsite, documentationDetails } = body;
 
-    if (!officerName || !officialDomainEmail || !institutionName) {
-      return NextResponse.json({ error: 'Missing required identity fields' }, { status: 400 });
+    const validated = OnboardingRequestSchema.safeParse(body);
+    if (!validated.success) {
+      return NextResponse.json(
+        { error: 'Invalid onboarding request format.', details: validated.error.format() },
+        { status: 400 }
+      );
     }
+
+    const { officerName, officerDesignation, officialDomainEmail, institutionName, officialWebsite, documentationDetails } = validated.data;
 
     // Find or create candidate institution record in NOT_ONBOARDED status
     let inst = await prisma.institution.findFirst({

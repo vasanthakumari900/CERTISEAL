@@ -4,7 +4,7 @@ process.env.ENCRYPTION_MASTER_KEY = process.env.ENCRYPTION_MASTER_KEY || '012345
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hashPassword, verifyPassword } from '../lib/auth/password';
-import { createSessionToken, verifySessionToken } from '../lib/auth/session';
+import { createSessionToken, verifySessionToken, getSession } from '../lib/auth/session';
 import { verifySignature } from '../lib/crypto/signatures';
 
 test('Bcrypt Password Hashing & Verification Security', async () => {
@@ -59,4 +59,15 @@ test('Fail-Closed Signature Security Check', () => {
   // Missing signature -> MUST fail closed (return false)
   const resultMissingSig = verifySignature(fingerprint, '', 'PUBLIC_KEY_PEM');
   assert.equal(resultMissingSig, false, 'Missing signature must fail closed to false');
+});
+
+test('Client Identity Impersonation Protection', async () => {
+  const fakeRequest = new Request('http://localhost:3000/api/certificates', {
+    headers: {
+      cookie: '' // Unauthenticated
+    }
+  });
+
+  const session = await getSession(fakeRequest);
+  assert.equal(session, null, 'Unauthenticated request must yield null session');
 });

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireInstitutionAccess } from '@/lib/auth/session';
 import { generateInstitutionKeyPair } from '@/lib/crypto/signatures';
 import { encryptField } from '@/lib/crypto/encryption';
 import { logAuditEvent } from '@/lib/services/audit-service';
@@ -7,6 +8,10 @@ import { logAuditEvent } from '@/lib/services/audit-service';
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   try {
     const institutionId = params.id;
+
+    // 1. Enforce Server-Side Authentication & Institution Ownership Access
+    const session = await requireInstitutionAccess(req, institutionId);
+
     const institution = await prisma.institution.findUnique({
       where: { id: institutionId }
     });
@@ -48,9 +53,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     });
 
     await logAuditEvent({
-      actorId: 'INST_ADMIN',
-      actorRole: 'INSTITUTION_ADMIN',
-      actorName: 'Institution Security Officer',
+      actorId: session.id,
+      actorRole: session.role,
+      actorName: session.name,
       action: 'KEY_ROTATION',
       result: 'SUCCESS',
       institutionId
@@ -63,6 +68,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       publicKeyFingerprint: newKeyPair.publicKeyFingerprint
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const status = error.message?.includes('UNAUTHORIZED') ? 401 : error.message?.includes('FORBIDDEN') ? 403 : 500;
+    return NextResponse.json({ error: error.message || 'Key rotation failed' }, { status });
   }
 }

@@ -1,17 +1,19 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
+import { requireAuth } from '@/lib/auth/session';
 
 export async function GET(req: Request) {
   try {
+    const session = await requireAuth(req);
+
     const { searchParams } = new URL(req.url);
-    const institutionId = searchParams.get('institutionId');
     const limit = parseInt(searchParams.get('limit') || '50');
 
     const whereClause: any = {};
-    if (institutionId) {
-      whereClause.institutionId = institutionId;
+    if (session.role !== 'SUPER_ADMIN' && session.institutionId) {
+      whereClause.institutionId = session.institutionId;
+    } else if (searchParams.get('institutionId')) {
+      whereClause.institutionId = searchParams.get('institutionId');
     }
 
     const auditLogs = await prisma.auditLog.findMany({
@@ -22,6 +24,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ auditLogs });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const status = error.message?.includes('UNAUTHORIZED') ? 401 : 500;
+    return NextResponse.json({ error: error.message }, { status });
   }
 }
