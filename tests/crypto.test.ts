@@ -1,5 +1,5 @@
-process.env.AUTH_SECRET = process.env.AUTH_SECRET || 'certiseal_sih_secret_key_2026_demo_32bytes_long';
-process.env.ENCRYPTION_MASTER_KEY = process.env.ENCRYPTION_MASTER_KEY || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+process.env.AUTH_SECRET = 'certiseal_sih_secret_key_2026_demo_32bytes_long';
+process.env.ENCRYPTION_MASTER_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

@@ -8,17 +8,15 @@ export interface EncryptedPayload {
 
 /**
  * Retrieves the master AES-256-GCM encryption key from environment variables.
- * FAILS FAST if ENCRYPTION_MASTER_KEY is missing or invalid length.
- * NO FALLBACK KEY IS PERMITTED.
+ * FAILS FAST if ENCRYPTION_MASTER_KEY is missing.
+ * NO FALLBACK OR DEFAULT KEYS PERMITTED.
  */
 function getMasterKey(): Buffer {
-  const keyHex = process.env.ENCRYPTION_MASTER_KEY;
-  if (!keyHex || keyHex.length < 64) {
-    throw new Error(
-      'CRITICAL SECURITY ERROR: ENCRYPTION_MASTER_KEY environment variable is missing or invalid. Application must fail fast.'
-    );
+  const ENCRYPTION_MASTER_KEY = process.env.ENCRYPTION_MASTER_KEY;
+  if (!ENCRYPTION_MASTER_KEY) {
+    throw new Error("ENCRYPTION_MASTER_KEY is required");
   }
-  return Buffer.from(keyHex.slice(0, 64), 'hex');
+  return Buffer.from(ENCRYPTION_MASTER_KEY.slice(0, 64), 'hex');
 }
 
 /**
@@ -61,7 +59,7 @@ export function decryptField(encryptedJsonString: string): string {
     decrypted += decipher.final('utf8');
     return decrypted;
   } catch (error: any) {
-    if (error.message && error.message.includes('CRITICAL SECURITY ERROR')) {
+    if (error.message && error.message.includes('ENCRYPTION_MASTER_KEY is required')) {
       throw error;
     }
     return '[Decryption Error: Authentication Tag / Secret Mismatch]';

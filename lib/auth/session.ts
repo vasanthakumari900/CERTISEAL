@@ -4,14 +4,14 @@ import { prisma } from '@/lib/prisma';
 
 /**
  * Retrieves the AUTH_SECRET from environment variables.
- * FAILS FAST if AUTH_SECRET is missing or empty.
+ * FAILS FAST if AUTH_SECRET is missing.
  */
 function getAuthSecret(): string {
-  const secret = process.env.AUTH_SECRET;
-  if (!secret || secret.trim().length === 0) {
-    throw new Error('CRITICAL SECURITY ERROR: AUTH_SECRET environment variable is missing or empty. Application must fail fast.');
+  const AUTH_SECRET = process.env.AUTH_SECRET;
+  if (!AUTH_SECRET) {
+    throw new Error("AUTH_SECRET is required");
   }
-  return secret;
+  return AUTH_SECRET;
 }
 
 export interface UserSession {
