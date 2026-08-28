@@ -1,0 +1,355 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String       @id @default(uuid())
+  email         String       @unique
+  passwordHash  String
+  name          String
+  role          String       // SUPER_ADMIN, REGISTRY_ADMIN, INSTITUTION_ADMIN, FACULTY, COMPANY_HR, STUDENT, PUBLIC_VERIFIER
+  institutionId String?
+  institution   Institution? @relation(fields: [institutionId], references: [id])
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([role])
+  @@index([institutionId])
+}
+
+model Institution {
+  id                   String                        @id @default(uuid())
+  publicId             String                        @unique // INST-TN-000123
+  officialName         String
+  normalizedName       String
+  shortName            String?
+  institutionType      String                        // University, IIT, NIT, Engineering College, Arts & Science, Autonomous College, etc.
+  institutionCategory  String?                       // Government, Private, Deemed, Central
+  establishedYear      Int?
+  logoUrl              String?
+  officialWebsite      String
+  officialEmail        String
+  officialPhone        String?
+  address              String
+  city                 String
+  district             String
+  state                String
+  country              String                        @default("India")
+  postalCode           String
+  latitude             Float?
+  longitude            Float?
+  description          String?
+  status               String                        @default("REGISTRY_LISTED") // REGISTRY_LISTED, NOT_ONBOARDED, ONBOARDING, VERIFIED, PARTICIPATING, SUSPENDED, INACTIVE
+  publicKey            String?
+  publicKeyFingerprint String?
+  keyVersion           Int                           @default(1)
+  createdAt            DateTime                      @default(now())
+  updatedAt            DateTime                      @updatedAt
+  lastVerifiedAt       DateTime?
+  users                User[]
+  certificates         Certificate[]
+  keys                 InstitutionKey[]
+  ledgerEntries        LedgerEntry[]
+  regulatoryRecords    InstitutionRegulatoryRecord[]
+  accreditations       InstitutionAccreditation[]
+  aliases              InstitutionAlias[]
+  sources              InstitutionSource[]
+  parentAffiliations   InstitutionAffiliation[]      @relation("ParentUniversity")
+  collegeAffiliations  InstitutionAffiliation[]      @relation("CollegeAffiliate")
+  onboardings          InstitutionOnboarding[]
+  requestsToJoin       InstitutionRequest[]
+
+  @@index([status])
+  @@index([state])
+  @@index([city])
+  @@index([normalizedName])
+}
+
+model InstitutionAlias {
+  id            String      @id @default(uuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  alias         String
+  aliasType     String      // ABBREVIATION, FORMER_NAME, SPELLING_VARIATION
+  source        String?
+
+  @@index([alias])
+}
+
+model InstitutionAffiliation {
+  id           String      @id @default(uuid())
+  collegeId    String
+  college      Institution @relation("CollegeAffiliate", fields: [collegeId], references: [id], onDelete: Cascade)
+  universityId String
+  university   Institution @relation("ParentUniversity", fields: [universityId], references: [id], onDelete: Cascade)
+  type         String      // PERMANENT, TEMPORARY, AUTONOMOUS
+  programScope String?
+  status       String      @default("ACTIVE")
+  validFrom    String?
+  validUntil   String?
+
+  @@index([collegeId])
+  @@index([universityId])
+}
+
+model InstitutionSource {
+  id             String      @id @default(uuid())
+  institutionId  String
+  institution    Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  sourceName     String      // UGC, AISHE, NIRF, AICTE, Official Website
+  sourceType     String      // GOVERNMENT_REGISTRY, ACCREDITATION_BODY, OFFICIAL_SITE
+  sourceUrl      String?
+  retrievedAt    DateTime    @default(now())
+  lastCheckedAt  DateTime    @default(now())
+  sourceRecordId String?
+  confidence     Float       @default(1.0)
+  dataVersion    String      @default("2026.1")
+
+  @@index([institutionId])
+  @@index([sourceName])
+}
+
+model InstitutionRegulatoryRecord {
+  id               String      @id @default(uuid())
+  institutionId    String
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  regulatoryBody   String      // UGC, AICTE, NAAC, NBA, NIRF, AISHE
+  recognitionType  String
+  recognitionStatus String     @default("APPROVED")
+  approvalNumber   String?
+  recognitionDate  String?
+  expiryDate       String?
+  notes            String?
+
+  @@index([institutionId])
+  @@index([regulatoryBody])
+}
+
+model InstitutionAccreditation {
+  id            String      @id @default(uuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  body          String      // NAAC, NBA
+  grade         String      // A++, A+, A, B++, B
+  score         Float?
+  status        String      @default("ACTIVE")
+  validFrom     String?
+  validUntil    String?
+
+  @@index([institutionId])
+}
+
+model InstitutionOnboarding {
+  id                   String      @id @default(uuid())
+  institutionId        String
+  institution          Institution @relation(fields: [institutionId], references: [id])
+  officerName          String
+  officerDesignation   String
+  officialDomainEmail  String
+  documentationDetails String
+  status               String      @default("SUBMITTED") // SUBMITTED, UNDER_REVIEW, APPROVED, REJECTED
+  submittedAt          DateTime    @default(now())
+  reviewedAt           DateTime?
+  reviewedBy           String?
+
+  @@index([institutionId])
+}
+
+model InstitutionKey {
+  id                   String      @id @default(uuid())
+  institutionId        String
+  institution          Institution @relation(fields: [institutionId], references: [id])
+  keyVersion           Int
+  publicKey            String
+  publicKeyFingerprint String
+  encryptedPrivateKey  String
+  status               String      @default("ACTIVE") // ACTIVE, ROTATED
+  createdAt            DateTime    @default(now())
+
+  @@index([institutionId])
+  @@index([keyVersion])
+}
+
+model Certificate {
+  id                   String               @id @default(uuid())
+  publicId             String               @unique // e.g. CERT-2026-000123
+  institutionId        String
+  institution          Institution          @relation(fields: [institutionId], references: [id])
+  studentName          String
+  studentRollNo        String
+  encryptedStudentData String?              // AES-256-GCM encrypted payload
+  course               String
+  department           String
+  certificateType      String               // Degree, Diploma, Internship, Transfer Certificate, etc.
+  issueDate            String
+  completionDate       String?
+  marks                String?
+  cgpa                 String?
+  graduationYear       String?
+  additionalMetadata   String?              // JSON stringified additional type-specific data
+  canonicalHash        String               // SHA-256 fingerprint
+  digitalSignature     String               // Ed25519 signature
+  keyVersion           Int                  @default(1)
+  status               String               @default("VERIFIED") // VERIFIED, ON_HOLD, RELEASED, REVOKED
+  holdReason           String?
+  revocationReason     String?
+  revokedBy            String?
+  revokedAt            DateTime?
+  currentVersion       Int                  @default(1)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  versions             CertificateVersion[]
+  ledgerEntries        LedgerEntry[]
+  forensicAnalyses     ForensicAnalysis[]
+
+  @@index([publicId])
+  @@index([institutionId])
+  @@index([studentRollNo])
+  @@index([status])
+}
+
+model CertificateVersion {
+  id               String      @id @default(uuid())
+  certificateId    String
+  certificate      Certificate @relation(fields: [certificateId], references: [id])
+  version          Int
+  canonicalHash    String
+  digitalSignature String
+  changedBy        String
+  changeReason     String
+  snapshotData     String      // JSON stringified snapshot of full attributes
+  createdAt        DateTime    @default(now())
+
+  @@index([certificateId])
+}
+
+model LedgerEntry {
+  id            String      @id @default(uuid())
+  certificateId String
+  certificate   Certificate @relation(fields: [certificateId], references: [id])
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+  operation     String      // ISSUANCE, STATUS_CHANGE, REVOCATION, VERSION_UPDATE, DEMO_TAMPER_SIMULATION
+  actorId       String
+  previousHash  String
+  currentHash   String
+  signatureRef  String
+  timestamp     DateTime    @default(now())
+
+  @@index([certificateId])
+  @@index([institutionId])
+  @@index([currentHash])
+}
+
+model ForensicAnalysis {
+  id                String      @id @default(uuid())
+  certificateId     String
+  certificate       Certificate @relation(fields: [certificateId], references: [id])
+  fontConsistency   Float       @default(1.0)
+  layoutAlignment   Float       @default(1.0)
+  metadataIntegrity Float       @default(1.0)
+  qrSubstitution    Boolean     @default(false)
+  overallRiskScore  Float       @default(0.0) // 0.0 = Safe, 1.0 = High Risk
+  signals           String?     // JSON array of signals
+  analyzedAt        DateTime    @default(now())
+
+  @@index([certificateId])
+}
+
+model VerificationRequest {
+  id               String   @id @default(uuid())
+  referenceId      String   @unique // VER-2026-XXXXXXXX
+  certificateId    String
+  verifierType     String   // COMPANY, PUBLIC, STUDENT
+  verifierId       String?
+  method           String   // QR, ID_LOOKUP, DOCUMENT_UPLOAD
+  result           String   // AUTHENTIC, ON_HOLD, RELEASED, REVOKED, TAMPERED, NOT_FOUND, VERIFICATION_UNAVAILABLE
+  fingerprintMatch Boolean
+  signatureValid   Boolean
+  ledgerValid      Boolean
+  documentMatch    Boolean  @default(true)
+  evidenceScore    Int      @default(100)
+  details          String?  // JSON stringified detailed result payload
+  createdAt        DateTime @default(now())
+
+  @@index([referenceId])
+  @@index([certificateId])
+  @@index([result])
+}
+
+model CandidateCase {
+  id                String                @id @default(uuid())
+  candidateName     String
+  applicationId     String
+  jobRole           String
+  companyName       String
+  overallStatus     String                @default("IN_PROGRESS") // IN_PROGRESS, VERIFIED, HAS_HOLD, TAMPERED_DETECTED
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  credentials       CandidateCredential[]
+}
+
+model CandidateCredential {
+  id              String        @id @default(uuid())
+  caseId          String
+  case            CandidateCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  certificateId   String
+  certificateType String
+  verificationStatus String
+  verifiedAt      DateTime      @default(now())
+
+  @@index([caseId])
+}
+
+model InstitutionRequest {
+  id            String      @id @default(uuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+  requestedBy   String
+  companyName   String
+  reason        String
+  status        String      @default("PENDING")
+  createdAt     DateTime    @default(now())
+
+  @@index([institutionId])
+}
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  eventId       String   @unique
+  actorId       String
+  actorRole     String
+  actorName     String
+  institutionId String?
+  action        String   // CERTIFICATE_CREATED, CERTIFICATE_VERIFIED, CERTIFICATE_REVOKED, etc.
+  certificateId String?
+  result        String   // SUCCESS, FAILURE, TAMPERED
+  previousHash  String
+  eventHash     String
+  ipAddress     String?
+  userAgent     String?
+  timestamp     DateTime @default(now())
+
+  @@index([action])
+  @@index([actorId])
+  @@index([timestamp])
+}
+
+model SecurityAlert {
+  id            String   @id @default(uuid())
+  severity      String   // LOW, MEDIUM, HIGH, CRITICAL
+  event         String
+  institutionId String?
+  certificateId String?
+  details       String
+  status        String   @default("OPEN") // OPEN, INVESTIGATING, RESOLVED
+  createdAt     DateTime @default(now())
+
+  @@index([severity])
+  @@index([status])
+}
