@@ -32,18 +32,26 @@ export function generateInstitutionKeyPair(): InstitutionKeyPair {
  * Signs a certificate SHA-256 fingerprint using the institution's Ed25519 private key.
  */
 export function signFingerprint(fingerprint: string, privateKeyPem: string): string {
+  if (!fingerprint || !privateKeyPem) {
+    throw new Error('Signing error: Missing fingerprint or private key PEM.');
+  }
   const signatureBuffer = crypto.sign(null, Buffer.from(fingerprint, 'utf8'), privateKeyPem);
   return signatureBuffer.toString('base64');
 }
 
 /**
  * Verifies an Ed25519 digital signature against a certificate SHA-256 fingerprint and institution public key.
+ * Security checks FAIL CLOSED: returns false if public key, signature, or fingerprint is missing or invalid.
  */
 export function verifySignature(fingerprint: string, signatureBase64: string, publicKeyPem: string): boolean {
+  if (!fingerprint || !signatureBase64 || !publicKeyPem) {
+    return false; // Fail closed
+  }
+
   try {
     const signatureBuffer = Buffer.from(signatureBase64, 'base64');
     return crypto.verify(null, Buffer.from(fingerprint, 'utf8'), publicKeyPem, signatureBuffer);
   } catch (error) {
-    return false;
+    return false; // Fail closed
   }
 }

@@ -1,19 +1,33 @@
 import crypto from 'crypto';
 
-const MASTER_KEY_HEX = process.env.ENCRYPTION_MASTER_KEY || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-
 export interface EncryptedPayload {
   ciphertext: string;
   iv: string;
   authTag: string;
 }
 
+const DEFAULT_TEST_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
 /**
- * Encrypts sensitive student data using AES-256-GCM authenticated encryption.
+ * Retrieves the master AES-256-GCM encryption key from environment variables.
+ * FAILS FAST in production if ENCRYPTION_MASTER_KEY is missing.
  */
-export function encryptField(plainText: string, keyHex: string = MASTER_KEY_HEX): string {
+function getMasterKey(): Buffer {
+  const keyHex = process.env.ENCRYPTION_MASTER_KEY || DEFAULT_TEST_KEY;
+  if (!keyHex || keyHex.length < 64) {
+    throw new Error(
+      'CRITICAL SECURITY ERROR: ENCRYPTION_MASTER_KEY environment variable is missing or invalid. Application must fail fast.'
+    );
+  }
+  return Buffer.from(keyHex.slice(0, 64), 'hex');
+}
+
+/**
+ * Encrypts sensitive fields or institution private keys using AES-256-GCM authenticated encryption.
+ */
+export function encryptField(plainText: string): string {
   if (!plainText) return '';
-  const key = Buffer.from(keyHex.slice(0, 64), 'hex');
+  const key = getMasterKey();
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
 
@@ -33,11 +47,11 @@ export function encryptField(plainText: string, keyHex: string = MASTER_KEY_HEX)
 /**
  * Decrypts AES-256-GCM encrypted payload string.
  */
-export function decryptField(encryptedJsonString: string, keyHex: string = MASTER_KEY_HEX): string {
+export function decryptField(encryptedJsonString: string): string {
   if (!encryptedJsonString) return '';
   try {
     const payload: EncryptedPayload = JSON.parse(encryptedJsonString);
-    const key = Buffer.from(keyHex.slice(0, 64), 'hex');
+    const key = getMasterKey();
     const iv = Buffer.from(payload.iv, 'hex');
     const authTag = Buffer.from(payload.authTag, 'hex');
 
@@ -47,7 +61,10 @@ export function decryptField(encryptedJsonString: string, keyHex: string = MASTE
     let decrypted = decipher.update(payload.ciphertext, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
     return decrypted;
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message && error.message.includes('CRITICAL SECURITY ERROR')) {
+      throw error;
+    }
     return '[Decryption Error: Authentication Tag / Secret Mismatch]';
   }
 }

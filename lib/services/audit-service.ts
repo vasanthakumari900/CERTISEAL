@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../prisma';
 import { generateAuditHash } from '../crypto/hashing';
-
-const prisma = new PrismaClient();
 
 export async function logAuditEvent(params: {
   actorId: string;

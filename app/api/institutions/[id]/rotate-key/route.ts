@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { generateInstitutionKeyPair } from '@/lib/crypto/signatures';
+import { encryptField } from '@/lib/crypto/encryption';
 import { logAuditEvent } from '@/lib/services/audit-service';
-
-const prisma = new PrismaClient();
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   try {
@@ -18,6 +17,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
     const nextVersion = institution.keyVersion + 1;
     const newKeyPair = generateInstitutionKeyPair();
+    const encryptedKeyCiphertext = encryptField(newKeyPair.privateKeyPem);
 
     // Mark active keys as ROTATED
     await prisma.institutionKey.updateMany({
@@ -25,14 +25,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       data: { status: 'ROTATED' }
     });
 
-    // Create new keypair entry
+    // Create new keypair entry with AES-256-GCM encrypted private key
     await prisma.institutionKey.create({
       data: {
         institutionId,
         keyVersion: nextVersion,
         publicKey: newKeyPair.publicKeyPem,
         publicKeyFingerprint: newKeyPair.publicKeyFingerprint,
-        encryptedPrivateKey: newKeyPair.privateKeyPem,
+        encryptedPrivateKey: encryptedKeyCiphertext,
         status: 'ACTIVE'
       }
     });

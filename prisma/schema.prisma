@@ -230,6 +230,7 @@ model CertificateVersion {
 
 model LedgerEntry {
   id            String      @id @default(uuid())
+  sequenceNumber Int        @default(1)
   certificateId String
   certificate   Certificate @relation(fields: [certificateId], references: [id])
   institutionId String
@@ -244,6 +245,7 @@ model LedgerEntry {
   @@index([certificateId])
   @@index([institutionId])
   @@index([currentHash])
+  @@index([sequenceNumber])
 }
 
 model ForensicAnalysis {
@@ -295,13 +297,13 @@ model CandidateCase {
 }
 
 model CandidateCredential {
-  id              String        @id @default(uuid())
-  caseId          String
-  case            CandidateCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  certificateId   String
-  certificateType String
+  id                 String        @id @default(uuid())
+  caseId             String
+  case               CandidateCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  certificateId      String
+  certificateType    String
   verificationStatus String
-  verifiedAt      DateTime      @default(now())
+  verifiedAt         DateTime      @default(now())
 
   @@index([caseId])
 }

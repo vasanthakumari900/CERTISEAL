@@ -1,7 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import { generateInstitutionKeyPair, signFingerprint } from '../lib/crypto/signatures';
-import { generateCertificateHash } from '../lib/crypto/hashing';
+import { buildCertificateCanonicalPayload } from '../lib/crypto/canonical';
 import { encryptField } from '../lib/crypto/encryption';
+import { hashPassword } from '../lib/auth/password';
 import { appendLedgerEntry } from '../lib/services/ledger-service';
 
 const prisma = new PrismaClient();
@@ -24,9 +25,10 @@ async function main() {
   await prisma.institutionAccreditation.deleteMany();
   await prisma.institutionSource.deleteMany();
   await prisma.institutionRequest.deleteMany();
+  await prisma.institutionOnboarding.deleteMany();
   await prisma.institution.deleteMany();
 
-  // Helper for generating institution with keypair & regulatory data
+  // Helper for generating institution with encrypted Ed25519 keypair & regulatory data
   async function createNationalInst(data: {
     publicId: string;
     name: string;
@@ -46,6 +48,7 @@ async function main() {
   }) {
     const keyPair = generateInstitutionKeyPair();
     const normalized = data.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const encryptedKeyCiphertext = encryptField(keyPair.privateKeyPem);
 
     const inst = await prisma.institution.create({
       data: {
@@ -73,7 +76,7 @@ async function main() {
             keyVersion: 1,
             publicKey: keyPair.publicKeyPem,
             publicKeyFingerprint: keyPair.publicKeyFingerprint,
-            encryptedPrivateKey: keyPair.privateKeyPem,
+            encryptedPrivateKey: encryptedKeyCiphertext,
             status: 'ACTIVE'
           }
         },
@@ -85,7 +88,7 @@ async function main() {
         },
         sources: {
           create: [
-            { sourceName: 'UGC Official Master Registry', sourceType: 'GOVERNMENT_REGISTRY', sourceUrl: 'https://ugc.ac.in' },
+            { sourceName: 'UGC Official Master Registry Snapshot', sourceType: 'GOVERNMENT_REGISTRY', sourceUrl: 'https://ugc.ac.in' },
             { sourceName: 'AISHE Ministry of Education', sourceType: 'GOVERNMENT_REGISTRY', sourceUrl: 'https://aishe.gov.in' }
           ]
         }
@@ -110,7 +113,7 @@ async function main() {
   }
 
   // ----------------------------------------------------
-  // CHENNAI COLLEGES (FULL COMPREHENSIVE LIST)
+  // CHENNAI & NATIONAL COLLEGES
   // ----------------------------------------------------
   const iitMadras = await createNationalInst({
     publicId: 'INST-TN-000101', name: 'Indian Institute of Technology Madras', code: 'IITM',
@@ -130,147 +133,12 @@ async function main() {
     city: 'Chennai', district: 'Chennai', state: 'Tamil Nadu', postalCode: '600044', status: 'PARTICIPATING', naacGrade: 'A++', aliases: ['MIT Chromepet', 'MIT Chennai']
   });
 
-  const actechGuindy = await createNationalInst({
-    publicId: 'INST-TN-000104', name: 'Alagappa College of Technology Guindy', code: 'ACTECH',
-    type: 'Government College', category: 'Government', year: 1944, website: 'https://act.annauniv.edu', email: 'dean@act.annauniv.edu',
-    city: 'Chennai', district: 'Chennai', state: 'Tamil Nadu', postalCode: '600025', status: 'PARTICIPATING', aliases: ['AC Tech Guindy', 'AC Tech Chennai']
-  });
-
-  const ssnEngg = await createNationalInst({
-    publicId: 'INST-TN-000105', name: 'SSN College of Engineering', code: 'SSN',
-    type: 'Autonomous College', category: 'Private', year: 1996, website: 'https://ssn.edu.in', email: 'info@ssn.edu.in',
-    city: 'Chennai', district: 'Chengalpattu', state: 'Tamil Nadu', postalCode: '603110', status: 'PARTICIPATING', naacGrade: 'A+', aliases: ['SSN Chennai', 'SSN College']
-  });
-
-  const loyolaChennai = await createNationalInst({
-    publicId: 'INST-TN-000106', name: 'Loyola College Chennai', code: 'LOYOLA',
-    type: 'Arts and Science College', category: 'Private', year: 1925, website: 'https://loyolacollege.edu', email: 'principal@loyolacollege.edu',
-    city: 'Chennai', district: 'Chennai', state: 'Tamil Nadu', postalCode: '600034', status: 'PARTICIPATING', naacGrade: 'A++', aliases: ['Loyola Chennai', 'Loyola']
-  });
-
-  const presidencyChennai = await createNationalInst({
-    publicId: 'INST-TN-000107', name: 'Presidency College Chennai', code: 'PRESIDENCY',
-    type: 'Government College', category: 'Government', year: 1840, website: 'https://presidencycollegechennai.ac.in', email: 'principal@presidencycollegechennai.ac.in',
-    city: 'Chennai', district: 'Chennai', state: 'Tamil Nadu', postalCode: '600005', status: 'PARTICIPATING', naacGrade: 'A+', aliases: ['Presidency Chennai']
-  });
-
-  const mccTambaram = await createNationalInst({
-    publicId: 'INST-TN-000108', name: 'Madras Christian College Tambaram', code: 'MCC',
-    type: 'Arts and Science College', category: 'Private', year: 1837, website: 'https://mcc.edu.in', email: 'principal@mcc.edu.in',
-    city: 'Chennai', district: 'Chennai', state: 'Tamil Nadu', postalCode: '600059', status: 'PARTICIPATING', naacGrade: 'A++', aliases: ['MCC Tambaram', 'MCC Chennai']
-  });
-
-  const stellaMaris = await createNationalInst({
-    publicId: 'INST-TN-000109', name: 'Stella Maris College Chennai', code: 'SMC',
-    type: 'Arts and Science College', category: 'Private', year: 1947, website: 'https://stellamariscollege.edu.in', email: 'principal@stellamariscollege.edu.in',
-    city: 'Chennai', district: 'Chennai', state: 'Tamil Nadu', postalCode: '600086', status: 'PARTICIPATING', naacGrade: 'A+', aliases: ['Stella Maris Chennai']
-  });
-
-  const mmcChennai = await createNationalInst({
-    publicId: 'INST-TN-000110', name: 'Madras Medical College', code: 'MMC',
-    type: 'Medical College', category: 'Government', year: 1835, website: 'https://mmc.ac.in', email: 'deanmmc@tn.gov.in',
-    city: 'Chennai', district: 'Chennai', state: 'Tamil Nadu', postalCode: '600003', status: 'PARTICIPATING', aliases: ['Madras Medical College', 'MMC Chennai']
-  });
-
-  const stanleyMedical = await createNationalInst({
-    publicId: 'INST-TN-000111', name: 'Stanley Medical College Chennai', code: 'SMC',
-    type: 'Medical College', category: 'Government', year: 1938, website: 'https://stanleymedicalcollege.in', email: 'deansmc@tn.gov.in',
-    city: 'Chennai', district: 'Chennai', state: 'Tamil Nadu', postalCode: '600001', status: 'PARTICIPATING', aliases: ['Stanley Medical College', 'Stanley Chennai']
-  });
-
-  const kilpaukMedical = await createNationalInst({
-    publicId: 'INST-TN-000112', name: 'Government Kilpauk Medical College Chennai', code: 'KMC',
-    type: 'Medical College', category: 'Government', year: 1960, website: 'https://gkmc.in', email: 'deankmc@tn.gov.in',
-    city: 'Chennai', district: 'Chennai', state: 'Tamil Nadu', postalCode: '600010', status: 'PARTICIPATING', aliases: ['Kilpauk Medical College', 'KMC Chennai']
-  });
-
-  const stJosephsEngg = await createNationalInst({
-    publicId: 'INST-TN-000113', name: 'St. Joseph\'s College of Engineering Chennai', code: 'STJOSEPH',
-    type: 'Autonomous College', category: 'Private', year: 1994, website: 'https://stjosephs.ac.in', email: 'jse@stjosephs.ac.in',
-    city: 'Chennai', district: 'Kancheepuram', state: 'Tamil Nadu', postalCode: '600119', status: 'PARTICIPATING', aliases: ['St. Josephs Chennai', 'St Josephs Engineering']
-  });
-
-  const rajalakshmiEngg = await createNationalInst({
-    publicId: 'INST-TN-000114', name: 'Rajalakshmi Engineering College Chennai', code: 'REC',
-    type: 'Autonomous College', category: 'Private', year: 1997, website: 'https://rajalakshmi.org', email: 'admin@rajalakshmi.edu.in',
-    city: 'Chennai', district: 'Kancheepuram', state: 'Tamil Nadu', postalCode: '602105', status: 'PARTICIPATING', naacGrade: 'A++', aliases: ['REC Chennai', 'Rajalakshmi Engineering']
-  });
-
-  const sairamEngg = await createNationalInst({
-    publicId: 'INST-TN-000115', name: 'Sri Sairam Engineering College Chennai', code: 'SAIRAM',
-    type: 'Autonomous College', category: 'Private', year: 1995, website: 'https://sairam.edu.in', email: 'sairam@sairam.edu.in',
-    city: 'Chennai', district: 'Kancheepuram', state: 'Tamil Nadu', postalCode: '600044', status: 'PARTICIPATING', naacGrade: 'A++', aliases: ['Sairam Chennai', 'Sri Sairam']
-  });
-
-  const easwariEngg = await createNationalInst({
-    publicId: 'INST-TN-000116', name: 'Easwari Engineering College Chennai', code: 'EASWARI',
-    type: 'Autonomous College', category: 'Private', year: 1996, website: 'https://srmeaswari.ac.in', email: 'eec@srmeaswari.ac.in',
-    city: 'Chennai', district: 'Chennai', state: 'Tamil Nadu', postalCode: '600089', status: 'PARTICIPATING', naacGrade: 'A', aliases: ['Easwari Ramapuram', 'SRM Easwari']
-  });
-
-  // OTHER TAMIL NADU CITIES (COIMBATORE, TRICHY, SALEM, MADURAI, VELLORE, THANJAVUR)
   const nitTrichy = await createNationalInst({
     publicId: 'INST-TN-000120', name: 'National Institute of Technology Tiruchirappalli', code: 'NITT',
     type: 'Institution of National Importance', category: 'Government', year: 1964, website: 'https://nitt.edu', email: 'registrar@nitt.edu',
     city: 'Tiruchirappalli', district: 'Tiruchirappalli', state: 'Tamil Nadu', postalCode: '620015', status: 'PARTICIPATING', naacGrade: 'A++', aliases: ['NIT Trichy', 'NITT']
   });
 
-  const gctCoimbatore = await createNationalInst({
-    publicId: 'INST-TN-000121', name: 'Government College of Technology Coimbatore', code: 'GCT',
-    type: 'Government College', category: 'Government', year: 1945, website: 'https://gct.ac.in', email: 'principal@gct.ac.in',
-    city: 'Coimbatore', district: 'Coimbatore', state: 'Tamil Nadu', postalCode: '641013', status: 'PARTICIPATING', naacGrade: 'A+', aliases: ['GCT Coimbatore', 'GCT']
-  });
-
-  const psgTech = await createNationalInst({
-    publicId: 'INST-TN-000122', name: 'PSG College of Technology', code: 'PSGTECH',
-    type: 'Autonomous College', category: 'Private', year: 1951, website: 'https://psgtech.edu', email: 'principal@psgtech.ac.in',
-    city: 'Coimbatore', district: 'Coimbatore', state: 'Tamil Nadu', postalCode: '641004', status: 'PARTICIPATING', naacGrade: 'A+', aliases: ['PSG Tech', 'PSG Coimbatore']
-  });
-
-  const vitVellore = await createNationalInst({
-    publicId: 'INST-TN-000123', name: 'Vellore Institute of Technology', code: 'VIT',
-    type: 'Deemed University', category: 'Private', year: 1984, website: 'https://vit.ac.in', email: 'info@vit.ac.in',
-    city: 'Vellore', district: 'Vellore', state: 'Tamil Nadu', postalCode: '632014', status: 'PARTICIPATING', naacGrade: 'A++', aliases: ['VIT Vellore', 'VIT']
-  });
-
-  const tceMadurai = await createNationalInst({
-    publicId: 'INST-TN-000124', name: 'Thiagarajar College of Engineering', code: 'TCE',
-    type: 'Autonomous College', category: 'Private', year: 1957, website: 'https://tce.edu', email: 'principal@tce.edu',
-    city: 'Madurai', district: 'Madurai', state: 'Tamil Nadu', postalCode: '625015', status: 'PARTICIPATING', naacGrade: 'A+', aliases: ['TCE Madurai']
-  });
-
-  // KERALA, KARNATAKA, MAHARASHTRA, DELHI, ETC.
-  const cetTrivandrum = await createNationalInst({
-    publicId: 'INST-KL-000201', name: 'College of Engineering Trivandrum', code: 'CET',
-    type: 'Government College', category: 'Government', year: 1939, website: 'https://cet.ac.in', email: 'principal@cet.ac.in',
-    city: 'Thiruvananthapuram', district: 'Thiruvananthapuram', state: 'Kerala', postalCode: '695016', status: 'PARTICIPATING', naacGrade: 'A', aliases: ['CET Trivandrum', 'CET']
-  });
-
-  const iiscBangalore = await createNationalInst({
-    publicId: 'INST-KA-000301', name: 'Indian Institute of Science Bengaluru', code: 'IISC',
-    type: 'Institution of National Importance', category: 'Government', year: 1909, website: 'https://iisc.ac.in', email: 'registrar@iisc.ac.in',
-    city: 'Bengaluru', district: 'Bengaluru Urban', state: 'Karnataka', postalCode: '560012', status: 'PARTICIPATING', naacGrade: 'A++', aliases: ['IISc', 'IISc Bangalore']
-  });
-
-  const uvceBangalore = await createNationalInst({
-    publicId: 'INST-KA-000302', name: 'University Visvesvaraya College of Engineering', code: 'UVCE',
-    type: 'Government College', category: 'Government', year: 1917, website: 'https://uvce.ac.in', email: 'principal@uvce.ac.in',
-    city: 'Bengaluru', district: 'Bengaluru Urban', state: 'Karnataka', postalCode: '560001', status: 'PARTICIPATING', aliases: ['UVCE Bangalore']
-  });
-
-  const coepPune = await createNationalInst({
-    publicId: 'INST-MH-000401', name: 'COEP Technological University', code: 'COEP',
-    type: 'State University', category: 'Government', year: 1854, website: 'https://coep.org.in', email: 'director@coep.org.in',
-    city: 'Pune', district: 'Pune', state: 'Maharashtra', postalCode: '411005', status: 'PARTICIPATING', naacGrade: 'A+', aliases: ['College of Engineering Pune', 'COEP']
-  });
-
-  const iitDelhi = await createNationalInst({
-    publicId: 'INST-DL-000501', name: 'Indian Institute of Technology Delhi', code: 'IITD',
-    type: 'IIT', category: 'Government', year: 1961, website: 'https://iitd.ac.in', email: 'registrar@iitd.ac.in',
-    city: 'New Delhi', district: 'South Delhi', state: 'Delhi', postalCode: '110016', status: 'PARTICIPATING', naacGrade: 'A++', aliases: ['IIT Delhi', 'IITD']
-  });
-
-  // NOT_ONBOARDED Demo College (Primary Demo for VERIFICATION_UNAVAILABLE state)
   const unonboardedInst = await createNationalInst({
     publicId: 'INST-TN-000999', name: 'ABC Engineering College', code: 'ABCC',
     type: 'Engineering College', category: 'Private', year: 2005, website: 'https://abcengg.edu.in', email: 'info@abcengg.edu.in',
@@ -278,16 +146,24 @@ async function main() {
   });
 
   // ----------------------------------------------------
-  // CREATE DEMO USERS
+  // CREATE DEMO USERS WITH PASSWORD HASHES
   // ----------------------------------------------------
+  const defaultPasswordHash = hashPassword('demo');
+
   const superAdmin = await prisma.user.create({
-    data: { name: 'Dr. Vikramaditya (Super Admin)', email: 'superadmin@certiseal.gov.in', passwordHash: 'demo', role: 'SUPER_ADMIN' }
+    data: { name: 'Dr. Vikramaditya (Super Admin)', email: 'superadmin@certiseal.gov.in', passwordHash: defaultPasswordHash, role: 'SUPER_ADMIN' }
   });
   const instAdmin = await prisma.user.create({
-    data: { name: 'Prof. Ramesh K. (Inst Admin)', email: 'admin@nit.ac.in', passwordHash: 'demo', role: 'INSTITUTION_ADMIN', institutionId: nitTrichy.inst.id }
+    data: { name: 'Prof. Ramesh K. (Inst Admin)', email: 'admin@nit.ac.in', passwordHash: defaultPasswordHash, role: 'INSTITUTION_ADMIN', institutionId: nitTrichy.inst.id }
   });
   const facultyIssuer = await prisma.user.create({
-    data: { name: 'Dr. Priya Sharma (Faculty Issuer)', email: 'priya.sharma@nit.ac.in', passwordHash: 'demo', role: 'FACULTY', institutionId: nitTrichy.inst.id }
+    data: { name: 'Dr. Priya Sharma (Faculty Issuer)', email: 'priya.sharma@nit.ac.in', passwordHash: defaultPasswordHash, role: 'FACULTY', institutionId: nitTrichy.inst.id }
+  });
+  const employerHr = await prisma.user.create({
+    data: { name: 'Vikram Mehta (Tata Recruiter)', email: 'recruiter@tata.com', passwordHash: defaultPasswordHash, role: 'COMPANY_HR' }
+  });
+  const student = await prisma.user.create({
+    data: { name: 'Rahul Kumar (Student)', email: 'rahul.kumar@student.nit.ac.in', passwordHash: defaultPasswordHash, role: 'STUDENT', institutionId: nitTrichy.inst.id }
   });
 
   // ----------------------------------------------------
@@ -309,8 +185,9 @@ async function main() {
     holdReason?: string;
     revocationReason?: string;
   }) {
-    const structured = {
+    const canonicalPayload = buildCertificateCanonicalPayload({
       certificateId: params.publicId,
+      institutionId: params.institution.id,
       institutionCode: params.code,
       studentName: params.studentName,
       studentRollNo: params.studentRollNo,
@@ -319,9 +196,9 @@ async function main() {
       certificateType: params.certificateType,
       issueDate: params.issueDate,
       cgpa: params.cgpa || ''
-    };
+    });
 
-    const canonicalHash = generateCertificateHash(structured);
+    const canonicalHash = require('crypto').createHash('sha256').update(canonicalPayload, 'utf8').digest('hex');
     const digitalSignature = signFingerprint(canonicalHash, params.privateKey);
     const encryptedData = encryptField(JSON.stringify({ studentName: params.studentName, studentRollNo: params.studentRollNo }));
 
@@ -355,7 +232,7 @@ async function main() {
         digitalSignature,
         changedBy: 'Dr. Priya Sharma',
         changeReason: 'Initial Cryptographic Issuance',
-        snapshotData: JSON.stringify(structured)
+        snapshotData: canonicalPayload
       }
     });
 
@@ -432,7 +309,7 @@ async function main() {
     revocationReason: 'Official cancellation due to academic misconduct and falsified project submission'
   });
 
-  console.log('Chennai & All-India Master Dataset Seeding completed successfully!');
+  console.log('Seeding completed successfully!');
 }
 
 main()

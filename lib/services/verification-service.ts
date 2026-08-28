@@ -1,10 +1,11 @@
-import { PrismaClient } from '@prisma/client';
+import crypto from 'crypto';
+import { prisma } from '../prisma';
 import { generateCertificateHash } from '../crypto/hashing';
+import { buildCertificateCanonicalPayload } from '../crypto/canonical';
 import { verifySignature } from '../crypto/signatures';
 import { logAuditEvent } from './audit-service';
+import { verifyLedgerIntegrity } from './ledger-service';
 import { analyzeDocumentForensics, DocumentForensicResult } from './forensic-service';
-
-const prisma = new PrismaClient();
 
 export interface EvidenceChainStep {
   name: string;
@@ -123,7 +124,7 @@ export async function verifyCertificate(
         }
       },
       ledgerEntries: {
-        orderBy: { timestamp: 'desc' },
+        orderBy: { sequenceNumber: 'desc' },
         take: 1
       }
     }
@@ -141,7 +142,7 @@ export async function verifyCertificate(
     });
 
     if (registryInst && registryInst.status === 'NOT_ONBOARDED') {
-      const unavailPayload: VerificationResultPayload = {
+      return {
         referenceId,
         result: 'VERIFICATION_UNAVAILABLE',
         certificateId: cleanId,
@@ -186,10 +187,9 @@ export async function verifyCertificate(
         aiExplanation: `Institution ${registryInst.officialName} is listed in the National Registry, but has not yet onboarded to CERTISEAL. Click 'Request Institution to Join' to notify university administrators.`,
         verifiedAt
       };
-      return unavailPayload;
     }
 
-    const notFoundPayload: VerificationResultPayload = {
+    return {
       referenceId,
       result: 'NOT_FOUND',
       certificateId: cleanId,
@@ -221,13 +221,13 @@ export async function verifyCertificate(
       aiExplanation: 'The certificate ID was not found in the institution trust registry. Note that absence of a record does not automatically prove forgery, but it indicates no cryptographically sealed record exists on CERTISEAL.',
       verifiedAt
     };
-    return notFoundPayload;
   }
 
-  // 2. Canonical serialization and SHA-256 fingerprint recalculation
-  const instCode = cert.institution.shortName || 'NITD';
-  const structuredPayload: Record<string, any> = {
+  // 2. Authoritative 14-field canonical payload reconstruction
+  const instCode = cert.institution.shortName || 'NITT';
+  const canonicalPayload = buildCertificateCanonicalPayload({
     certificateId: cert.publicId,
+    institutionId: cert.institutionId,
     institutionCode: instCode,
     studentName: cert.studentName,
     studentRollNo: cert.studentRollNo,
@@ -235,21 +235,27 @@ export async function verifyCertificate(
     department: cert.department,
     certificateType: cert.certificateType,
     issueDate: cert.issueDate,
-    cgpa: cert.cgpa || ''
-  };
+    completionDate: cert.completionDate,
+    marks: cert.marks,
+    cgpa: cert.cgpa,
+    graduationYear: cert.graduationYear,
+    additionalMetadata: cert.additionalMetadata
+  });
 
-  const recalculatedHash = generateCertificateHash(structuredPayload);
+  const recalculatedHash = crypto.createHash('sha256').update(canonicalPayload, 'utf8').digest('hex');
   const hashMatched = recalculatedHash.toLowerCase() === cert.canonicalHash.toLowerCase();
 
-  // 3. Ed25519 Digital Signature Verification
-  const signatureValid = cert.institution.publicKey
+  // 3. Fail-Closed Ed25519 Signature Verification
+  // FAIL CLOSED: If public key is missing or signature is missing, signatureValid MUST be false
+  const signatureValid = (cert.institution.publicKey && cert.digitalSignature)
     ? verifySignature(cert.canonicalHash, cert.digitalSignature, cert.institution.publicKey)
-    : true;
+    : false;
 
-  // 4. Ledger Integrity Check
-  const ledgerValid = cert.ledgerEntries.length > 0 && (cert.institution.status === 'PARTICIPATING' || cert.institution.status === 'ACTIVE');
+  // 4. Real Genesis-to-Tip Hash Chain Ledger Integrity Audit
+  const ledgerAudit = await verifyLedgerIntegrity();
+  const ledgerValid = ledgerAudit.isValid && cert.ledgerEntries.length > 0;
 
-  // 5. Document Upload OCR & Forensics Comparison
+  // 5. Document Upload OCR & Risk Signal Comparison
   let isDocumentUploaded = false;
   let isDocumentMatch = true;
   const fieldDiffs: Array<{ field: string; trustedValue: string; submittedValue: string; isMatch: boolean }> = [];
@@ -286,7 +292,7 @@ export async function verifyCertificate(
     forensics = analyzeDocumentForensics(up.rawText || '', up.fileName || '', isDocumentMatch);
   }
 
-  // 6. Determine Final Result State & Calculate Evidence Score
+  // 6. Determine Final Result State
   let finalResult: 'VERIFIED' | 'ON_HOLD' | 'RELEASED' | 'REVOKED' | 'TAMPERED' | 'NOT_FOUND' | 'VERIFICATION_UNAVAILABLE' = 'VERIFIED';
   let statusExplanation = 'Certificate is authentic, cryptographically verified, and currently valid.';
 
@@ -294,7 +300,7 @@ export async function verifyCertificate(
     finalResult = 'TAMPERED';
     statusExplanation = !isDocumentMatch
       ? 'Document tampering detected! Submitted document attributes mismatch the cryptographically trusted institutional record.'
-      : 'Cryptographic hash mismatch or signature invalid! The record data appears to have been altered.';
+      : 'Cryptographic hash mismatch or invalid signature! The credential data appears to have been altered.';
   } else if (cert.status === 'REVOKED') {
     finalResult = 'REVOKED';
     statusExplanation = 'This certificate was genuinely issued by the institution but has subsequently been officially revoked.';
@@ -306,31 +312,42 @@ export async function verifyCertificate(
     statusExplanation = 'Certificate was previously on hold and has been officially cleared and released by the institution.';
   }
 
-  // 7-Step Evidence Chain & Score
+  // 7-Step Evidence Chain Calculation
   const evidenceChain: EvidenceChainStep[] = [
     { name: 'Certificate Found', passed: true, score: 20, maxScore: 20, details: `Record ID: ${cert.publicId}` },
     { name: 'Institution Valid', passed: cert.institution.status !== 'SUSPENDED', score: 10, maxScore: 10, details: `${cert.institution.officialName} (${cert.institution.status})` },
-    { name: 'SHA-256 Hash Match', passed: hashMatched, score: hashMatched ? 25 : 0, maxScore: 25, details: hashMatched ? 'Fingerprint Matched' : 'Hash Mismatch' },
-    { name: 'Ed25519 Signature', passed: signatureValid, score: signatureValid ? 20 : 0, maxScore: 20, details: signatureValid ? 'Digital Signature Valid' : 'Signature Invalid' },
-    { name: 'Ledger Integrity', passed: ledgerValid, score: ledgerValid ? 15 : 0, maxScore: 15, details: ledgerValid ? 'Genesis Chain Valid' : 'Ledger Flagged' },
+    { name: 'SHA-256 Hash Match', passed: hashMatched, score: hashMatched ? 25 : 0, maxScore: 25, details: hashMatched ? 'Canonical Fingerprint Matched' : 'Hash Mismatch' },
+    { name: 'Ed25519 Signature', passed: signatureValid, score: signatureValid ? 20 : 0, maxScore: 20, details: signatureValid ? 'Digital Signature Valid' : 'Signature Invalid / Key Missing' },
+    { name: 'Ledger Integrity', passed: ledgerValid, score: ledgerValid ? 15 : 0, maxScore: 15, details: ledgerValid ? 'Genesis Chain Valid' : 'Ledger Integrity Flagged' },
     { name: 'Document Comparison', passed: isDocumentMatch, score: isDocumentMatch ? 10 : 0, maxScore: 10, details: isDocumentMatch ? '100% Match' : 'Mismatched Fields' }
   ];
 
   const evidenceScore = evidenceChain.reduce((sum, step) => sum + step.score, 0);
 
-  // AI Summary Explanation
+  // Intelligence Explanation Summary
   let aiExplanation = '';
   if (finalResult === 'VERIFIED' || finalResult === 'RELEASED') {
-    aiExplanation = `The certificate ID ${cert.publicId} exists in ${cert.institution.officialName}'s registry. The SHA-256 fingerprint matches the institutional record, the Ed25519 digital signature is valid, and ledger chain integrity is verified. Weighted Evidence Score: ${evidenceScore}/100.`;
+    aiExplanation = `The certificate ID ${cert.publicId} exists in ${cert.institution.officialName}'s registry. The SHA-256 canonical hash matches the institutional record, the Ed25519 signature is cryptographically valid, and ledger chain integrity is verified. Weighted Evidence Score: ${evidenceScore}/100.`;
   } else if (finalResult === 'ON_HOLD') {
-    aiExplanation = `The certificate ID ${cert.publicId} is authentic and cryptographically verified. However, ${cert.institution.officialName} has placed it on temporary administrative hold (${cert.holdReason || 'Administrative clearance pending'}). This does NOT indicate that the certificate is fake.`;
+    aiExplanation = `The certificate ID ${cert.publicId} is authentic and cryptographically verified. However, ${cert.institution.officialName} has placed it on temporary administrative hold (${cert.holdReason || 'Administrative clearance pending'}). This does NOT indicate that the certificate is fake. Recommendation: DO NOT RELY until hold is cleared.`;
   } else if (finalResult === 'REVOKED') {
-    aiExplanation = `The certificate ID ${cert.publicId} was cryptographically authentic when issued by ${cert.institution.officialName}, but was cancelled on ${cert.revokedAt ? cert.revokedAt.toISOString().split('T')[0] : 'record date'} due to: ${cert.revocationReason || 'Administrative cancellation'}.`;
+    aiExplanation = `The certificate ID ${cert.publicId} was cryptographically authentic when issued by ${cert.institution.officialName}, but was officially revoked on ${cert.revokedAt ? cert.revokedAt.toISOString().split('T')[0] : 'record date'} due to: ${cert.revocationReason || 'Administrative cancellation'}. Recommendation: DO NOT RELY.`;
   } else if (finalResult === 'TAMPERED') {
-    aiExplanation = `DOCUMENT TAMPERING DETECTED for certificate ID ${cert.publicId}. The submitted data or signature does not match the canonical SHA-256 fingerprint stored at issuance time. Key discrepancies have been highlighted in red.`;
+    aiExplanation = `DOCUMENT TAMPERING DETECTED for certificate ID ${cert.publicId}. The submitted data or cryptographic signature does not match the canonical SHA-256 fingerprint stored at issuance time. Key discrepancies have been highlighted in red.`;
   }
 
-  const resultPayload: VerificationResultPayload = {
+  // Audit event logging
+  await logAuditEvent({
+    actorId: options.verifierId || 'PUBLIC_VERIFIER',
+    actorRole: options.verifierType || 'PUBLIC',
+    actorName: 'Certificate Verifier',
+    action: 'CERTIFICATE_VERIFIED',
+    result: finalResult === 'TAMPERED' ? 'TAMPERED' : 'SUCCESS',
+    institutionId: cert.institutionId,
+    certificateId: cert.id
+  });
+
+  return {
     referenceId,
     result: finalResult,
     certificateId: cert.id,
@@ -401,6 +418,4 @@ export async function verifyCertificate(
     aiExplanation,
     verifiedAt
   };
-
-  return resultPayload;
 }

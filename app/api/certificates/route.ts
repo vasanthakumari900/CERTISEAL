@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { generateCertificateHash } from '@/lib/crypto/hashing';
+import { buildCertificateCanonicalPayload } from '@/lib/crypto/canonical';
 import { signFingerprint, generateInstitutionKeyPair } from '@/lib/crypto/signatures';
-import { encryptField } from '@/lib/crypto/encryption';
+import { encryptField, decryptField } from '@/lib/crypto/encryption';
 import { appendLedgerEntry } from '@/lib/services/ledger-service';
 import { logAuditEvent } from '@/lib/services/audit-service';
-
-const prisma = new PrismaClient();
 
 export async function GET(req: Request) {
   try {
@@ -106,13 +105,16 @@ export async function POST(req: Request) {
 
     if (!instKey) {
       const newKeyPair = generateInstitutionKeyPair();
+      // Store encrypted private key in database with AES-256-GCM
+      const encryptedKeyCiphertext = encryptField(newKeyPair.privateKeyPem);
+
       instKey = await prisma.institutionKey.create({
         data: {
           institutionId,
           keyVersion: 1,
           publicKey: newKeyPair.publicKeyPem,
           publicKeyFingerprint: newKeyPair.publicKeyFingerprint,
-          encryptedPrivateKey: newKeyPair.privateKeyPem,
+          encryptedPrivateKey: encryptedKeyCiphertext,
           status: 'ACTIVE'
         }
       });
@@ -132,9 +134,12 @@ export async function POST(req: Request) {
     const sensitivePayload = JSON.stringify({ studentName, studentRollNo });
     const encryptedStudentData = encryptField(sensitivePayload);
 
-    const instCode = institution.shortName || 'NITD';
-    const structuredPayload = {
+    const instCode = institution.shortName || 'NITT';
+    
+    // Authoritative 14-field canonical payload reconstruction
+    const canonicalPayload = buildCertificateCanonicalPayload({
       certificateId: publicId,
+      institutionId,
       institutionCode: instCode,
       studentName,
       studentRollNo,
@@ -142,11 +147,22 @@ export async function POST(req: Request) {
       department,
       certificateType,
       issueDate,
-      cgpa: cgpa || ''
-    };
+      completionDate,
+      marks,
+      cgpa,
+      graduationYear,
+      additionalMetadata: additionalMetadata ? JSON.stringify(additionalMetadata) : null
+    });
 
-    const canonicalHash = generateCertificateHash(structuredPayload);
-    const digitalSignature = signFingerprint(canonicalHash, instKey.encryptedPrivateKey);
+    const canonicalHash = require('crypto').createHash('sha256').update(canonicalPayload, 'utf8').digest('hex');
+
+    // Decrypt private key server-side in memory ONLY for signing
+    let privateKeyPem = instKey.encryptedPrivateKey;
+    if (privateKeyPem.includes('ciphertext')) {
+      privateKeyPem = decryptField(privateKeyPem);
+    }
+
+    const digitalSignature = signFingerprint(canonicalHash, privateKeyPem);
 
     const certificate = await prisma.certificate.create({
       data: {
@@ -180,7 +196,7 @@ export async function POST(req: Request) {
         digitalSignature,
         changedBy: actorId || 'FACULTY_ISSUER',
         changeReason: 'Initial Cryptographic Issuance',
-        snapshotData: JSON.stringify(structuredPayload)
+        snapshotData: canonicalPayload
       }
     });
 

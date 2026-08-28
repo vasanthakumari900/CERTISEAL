@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../prisma';
 import { generateLedgerHash } from '../crypto/hashing';
-
-const prisma = new PrismaClient();
 
 export const GENESIS_HASH = "GENESIS_BLOCK_CERTISEAL_000000000000000000000000000000000000000000000000";
 
@@ -15,6 +13,7 @@ export interface LedgerVerificationReport {
   tipHash: string;
   blocks: Array<{
     index: number;
+    sequenceNumber: number;
     id: string;
     certificateId: string;
     operation: string;
@@ -27,7 +26,7 @@ export interface LedgerVerificationReport {
 }
 
 /**
- * Appends a new entry to the immutable hash-chained ledger.
+ * Appends a new entry to the immutable hash-chained ledger with sequence numbers.
  */
 export async function appendLedgerEntry(data: {
   certificateId: string;
@@ -37,9 +36,10 @@ export async function appendLedgerEntry(data: {
   signatureRef: string;
 }) {
   const lastEntry = await prisma.ledgerEntry.findFirst({
-    orderBy: { timestamp: 'desc' }
+    orderBy: { sequenceNumber: 'desc' }
   });
 
+  const nextSeq = lastEntry ? lastEntry.sequenceNumber + 1 : 1;
   const previousHash = lastEntry ? lastEntry.currentHash : GENESIS_HASH;
   const timestamp = new Date().toISOString();
   const recordId = `LEDGER-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
@@ -57,6 +57,7 @@ export async function appendLedgerEntry(data: {
   const newEntry = await prisma.ledgerEntry.create({
     data: {
       id: recordId,
+      sequenceNumber: nextSeq,
       certificateId: data.certificateId,
       institutionId: data.institutionId,
       operation: data.operation,
@@ -76,7 +77,7 @@ export async function appendLedgerEntry(data: {
  */
 export async function verifyLedgerIntegrity(): Promise<LedgerVerificationReport> {
   const entries = await prisma.ledgerEntry.findMany({
-    orderBy: { timestamp: 'asc' }
+    orderBy: { sequenceNumber: 'asc' }
   });
 
   if (entries.length === 0) {
@@ -125,6 +126,7 @@ export async function verifyLedgerIntegrity(): Promise<LedgerVerificationReport>
 
     blockReports.push({
       index: i + 1,
+      sequenceNumber: entry.sequenceNumber,
       id: entry.id,
       certificateId: entry.certificateId,
       operation: entry.operation,
@@ -152,12 +154,12 @@ export async function verifyLedgerIntegrity(): Promise<LedgerVerificationReport>
 
 /**
  * CONTROLLED DEMO TAMPER SIMULATOR (SIH Judge Demonstration Mode)
- * Deliberately modifies currentHash of entry #3 to trigger RED alert.
+ * Deliberately modifies currentHash of entry #2 or #3 to trigger RED alert.
  */
 export async function simulateDemoLedgerTampering() {
   const targetEntry = await prisma.ledgerEntry.findFirst({
-    skip: 1, // Entry #2 or #3
-    orderBy: { timestamp: 'asc' }
+    skip: 1, // Entry #2
+    orderBy: { sequenceNumber: 'asc' }
   });
 
   if (targetEntry) {
@@ -177,7 +179,7 @@ export async function simulateDemoLedgerTampering() {
  */
 export async function restoreDemoLedgerIntegrity() {
   const entries = await prisma.ledgerEntry.findMany({
-    orderBy: { timestamp: 'asc' }
+    orderBy: { sequenceNumber: 'asc' }
   });
 
   let expectedPrev = GENESIS_HASH;
