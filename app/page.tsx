@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ShieldCheck, Search, Cpu, Lock, CheckCircle2, ArrowRight, Building2, AlertTriangle, FileCheck, Layers, Eye } from 'lucide-react';
+import { ShieldCheck, Search, Cpu, Lock, CheckCircle2, ArrowRight, Building2, AlertTriangle, FileCheck, Layers, Eye, HelpCircle, ChevronRight } from 'lucide-react';
 
 export default function LandingPage() {
   const router = useRouter();
@@ -24,23 +24,23 @@ export default function LandingPage() {
   ];
 
   return (
-    <div className="space-y-16 py-6">
+    <div className="space-y-16 py-6 max-w-6xl mx-auto">
       {/* Hero Section */}
-      <section className="text-center space-y-6 max-w-4xl mx-auto pt-6 pb-10">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-semibold tracking-wide">
+      <section className="text-center space-y-6 max-w-4xl mx-auto pt-4 pb-6">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-semibold tracking-wide">
           <ShieldCheck className="w-4 h-4 text-blue-400" />
-          Smart India Hackathon Infrastructure Prototype
+          Smart India Hackathon 2026 Technical Submission
         </div>
 
         <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-white leading-tight">
-          Verify Certificates. <br />
+          Digital Trust & Verification Layer <br />
           <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-cyan-400 to-indigo-400">
-            Trust Qualifications.
+            For Academic Credentials
           </span>
         </h1>
 
-        <p className="text-lg text-slate-300 max-w-2xl mx-auto leading-relaxed">
-          A cryptographically secured certificate verification & trust platform connecting educational institutions, recruitment teams, and employers in seconds.
+        <p className="text-base sm:text-lg text-slate-300 max-w-3xl mx-auto leading-relaxed">
+          CERTISEAL goes beyond answering "Does this certificate exist?". It establishes a complete <strong>8-Level Evidence Chain</strong> from institution identity to Ed25519 signatures, lifecycle holds, and document-vs-record field diffs in under 2 seconds.
         </p>
 
         <p className="text-xs font-mono text-blue-400 uppercase tracking-widest font-bold">
@@ -70,7 +70,7 @@ export default function LandingPage() {
 
         {/* Quick Judge Sample Demo Clickers */}
         <div className="pt-4">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Quick Test Pre-Seeded Certificates (Click to Verify):</p>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">SIH Pre-Seeded Scenario Certificates (Click to Test):</p>
           <div className="flex flex-wrap items-center justify-center gap-2">
             {sampleDemoCerts.map((sample) => (
               <button
@@ -85,19 +85,40 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* WHY CERTISEAL Ecosystem Banner */}
+      <section className="bg-gradient-to-r from-blue-950/80 via-navy-900 to-indigo-950/80 rounded-2xl border border-blue-800/50 p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6">
+        <div className="space-y-2 text-left">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-blue-500/20 text-blue-300 text-xs font-mono font-bold">
+            <HelpCircle className="w-3.5 h-3.5" />
+            ECOSYSTEM POSITIONING
+          </div>
+          <h3 className="text-xl sm:text-2xl font-bold text-white">Why CERTISEAL if DigiLocker & NAD Exist?</h3>
+          <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+            DigiLocker is a citizen document repository. CERTISEAL provides a complementary <strong>Trust & Verification Engine</strong> featuring explainable cryptographic proofs, lifecycle hold handling, and document tamper comparison tables.
+          </p>
+        </div>
+        <Link
+          href="/why-certiseal"
+          className="shrink-0 px-5 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-2"
+        >
+          <span>EXPLORE WHY CERTISEAL</span>
+          <ChevronRight className="w-4 h-4" />
+        </Link>
+      </section>
+
       {/* Visual Process Diagram */}
       <section className="bg-navy-900/50 rounded-2xl border border-slate-800 p-8">
         <div className="text-center mb-8">
-          <h2 className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-1">Cryptographic Pipeline</h2>
-          <h3 className="text-2xl font-bold text-white">How Trust is Built & Verified</h3>
+          <h2 className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-1">Evidence Chain Pipeline</h2>
+          <h3 className="text-2xl font-bold text-white">How Trust is Established & Verified</h3>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 relative">
           {[
-            { step: '01', title: 'ISSUE', desc: 'Institution enters canonical certificate payload', icon: Building2, color: 'text-blue-400' },
-            { step: '02', title: 'SEAL', desc: 'SHA-256 fingerprint generated & Ed25519 signed', icon: Lock, color: 'text-purple-400' },
-            { step: '03', title: 'VERIFY', desc: 'Employer scans QR or enters Certificate ID', icon: Search, color: 'text-cyan-400' },
-            { step: '04', title: 'TRUST', desc: 'Status-aware verification report generated', icon: CheckCircle2, color: 'text-emerald-400' }
+            { step: '01', title: 'INSTITUTION IDENTITY', desc: 'Verified against UGC/AISHE master snapshot & Ed25519 keys', icon: Building2, color: 'text-blue-400' },
+            { step: '02', title: 'CANONICAL SEAL', desc: 'SHA-256 fingerprint generated & signed by institution key', icon: Lock, color: 'text-purple-400' },
+            { step: '03', title: 'LEDGER RECORDING', desc: 'Appended to tamper-evident Genesis-to-Tip database hash chain', icon: Layers, color: 'text-cyan-400' },
+            { step: '04', title: 'STATUS VERIFICATION', desc: 'Returns state-aware result (VERIFIED, ON_HOLD, RELEASED, REVOKED)', icon: CheckCircle2, color: 'text-emerald-400' }
           ].map((item, idx) => {
             const Icon = item.icon;
             return (
@@ -106,7 +127,7 @@ export default function LandingPage() {
                   <span className="text-xs font-mono text-slate-500 font-bold">STEP {item.step}</span>
                   <Icon className={`w-6 h-6 ${item.color}`} />
                 </div>
-                <h4 className="text-lg font-bold text-white mb-2">{item.title}</h4>
+                <h4 className="text-base font-bold text-white mb-2">{item.title}</h4>
                 <p className="text-xs text-slate-400 leading-relaxed">{item.desc}</p>
               </div>
             );
@@ -117,7 +138,7 @@ export default function LandingPage() {
       {/* 6 Core Differentiator Cards */}
       <section className="space-y-8">
         <div className="text-center">
-          <h2 className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-1">Core Architecture Principles</h2>
+          <h2 className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-1">Core Technical Architecture</h2>
           <h3 className="text-3xl font-extrabold text-white">Why CERTISEAL Outperforms Legacy Approaches</h3>
         </div>
 
@@ -128,7 +149,7 @@ export default function LandingPage() {
             </div>
             <h4 className="text-base font-bold text-white">1. Status-Aware Lifecycle Engine</h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Does not simply answer "Genuine or Fake". Supports <span className="text-amber-300 font-semibold font-mono">ON_HOLD</span>, <span className="text-blue-300 font-semibold font-mono">RELEASED</span>, <span className="text-red-300 font-semibold font-mono">REVOKED</span>, and <span className="text-emerald-300 font-semibold font-mono">VERIFIED</span> states. An authentic certificate on hold is clearly identified without falsely labeling it as fake.
+              Does not simply answer "Genuine or Fake". Supports <span className="text-amber-300 font-semibold font-mono">ON_HOLD</span>, <span className="text-blue-300 font-semibold font-mono">RELEASED</span>, <span className="text-red-300 font-semibold font-mono">REVOKED</span>, and <span className="text-emerald-300 font-semibold font-mono">VERIFIED</span> states. An authentic certificate on hold is explicitly identified without calling it fake.
             </p>
           </div>
 
@@ -156,9 +177,9 @@ export default function LandingPage() {
             <div className="p-2.5 w-fit rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
               <Building2 className="w-5 h-5" />
             </div>
-            <h4 className="text-base font-bold text-white">4. Institution-Owned Keys</h4>
+            <h4 className="text-base font-bold text-white">4. Institution Key Hierarchy</h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Each educational institution possesses independent Ed25519 keypairs and retains strict administrative accountability. Supports key rotation with backwards verification compatibility.
+              Each educational institution possesses independent Ed25519 keypairs and retains administrative accountability. Supports key rotation with backwards verification compatibility.
             </p>
           </div>
 
@@ -166,9 +187,9 @@ export default function LandingPage() {
             <div className="p-2.5 w-fit rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
               <FileCheck className="w-5 h-5" />
             </div>
-            <h4 className="text-base font-bold text-white">5. Tiered Triple Verification</h4>
+            <h4 className="text-base font-bold text-white">5. Document Comparison Table</h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Support QR Camera Scanning, Certificate ID lookup, and PDF/Image document upload with OCR extraction & field-by-field mismatch diff highlighting.
+              Supports PDF/Image document upload with OCR extraction and side-by-side field-by-field diff highlighting (e.g. comparing submitted CGPA against trusted database record).
             </p>
           </div>
 
@@ -176,9 +197,9 @@ export default function LandingPage() {
             <div className="p-2.5 w-fit rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
               <Eye className="w-5 h-5" />
             </div>
-            <h4 className="text-base font-bold text-white">6. Privacy-First Architecture</h4>
+            <h4 className="text-base font-bold text-white">6. Privacy-Aware Disclosure</h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Sensitive student fields are encrypted with AES-256-GCM. Public verification displays only necessary trust evidence without leaking private student contact records.
+              Sensitive student fields are encrypted at rest with AES-256-GCM. Students can generate public verified profiles with customizable privacy controls.
             </p>
           </div>
         </div>
@@ -186,7 +207,7 @@ export default function LandingPage() {
 
       {/* CTA Box */}
       <section className="bg-gradient-to-r from-blue-950 via-navy-900 to-indigo-950 p-8 sm:p-12 rounded-2xl border border-blue-800/50 text-center space-y-4">
-        <h3 className="text-2xl sm:text-3xl font-extrabold text-white">Ready for Judge Evaluation Demonstration?</h3>
+        <h3 className="text-2xl sm:text-3xl font-extrabold text-white">Ready for SIH Judge Evaluation Demonstration?</h3>
         <p className="text-sm text-slate-300 max-w-xl mx-auto">
           Switch roles using the top right Demo Switcher or test the complete verification engine right now.
         </p>
@@ -198,10 +219,10 @@ export default function LandingPage() {
             Verify a Certificate
           </Link>
           <Link
-            href="/how-it-works"
+            href="/why-certiseal"
             className="px-6 py-3 bg-navy-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-semibold rounded-xl text-sm transition-all"
           >
-            How Verification Works
+            Why CERTISEAL?
           </Link>
         </div>
       </section>

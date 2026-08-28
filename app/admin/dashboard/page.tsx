@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ShieldCheck, Building2, Database, AlertTriangle, CheckCircle2, RefreshCw, Layers, ShieldAlert, Cpu, ArrowUpRight } from 'lucide-react';
+import { ShieldCheck, Building2, Database, AlertTriangle, CheckCircle2, RefreshCw, Layers, ShieldAlert, Cpu, ArrowUpRight, UserCheck, Check, X } from 'lucide-react';
 
 export default function AdminDashboardPage() {
   const [stats, setStats] = useState<any>({
@@ -19,6 +19,20 @@ export default function AdminDashboardPage() {
   const [ledgerReport, setLedgerReport] = useState<any>(null);
   const [isScanningLedger, setIsScanningLedger] = useState(false);
   const [alerts, setAlerts] = useState<any[]>([]);
+
+  // Pending Onboarding Requests State
+  const [onboardings, setOnboardings] = useState<any[]>([
+    {
+      id: 'ONB-2026-001',
+      officerName: 'Dr. K. Ramanathan',
+      officerDesignation: 'Dean of Academics',
+      officialDomainEmail: 'dean@mitindia.edu',
+      institutionName: 'Madras Institute of Technology Chromepet',
+      documentationDetails: 'UGC & AISHE Accreditation Record Verified',
+      status: 'SUBMITTED',
+      submittedAt: new Date().toISOString()
+    }
+  ]);
 
   useEffect(() => {
     fetchAlerts();
@@ -44,6 +58,14 @@ export default function AdminDashboardPage() {
     } finally {
       setIsScanningLedger(false);
     }
+  };
+
+  const handleApproveOnboarding = (id: string) => {
+    setOnboardings(prev => prev.map(o => o.id === id ? { ...o, status: 'APPROVED' } : o));
+  };
+
+  const handleRejectOnboarding = (id: string) => {
+    setOnboardings(prev => prev.map(o => o.id === id ? { ...o, status: 'REJECTED' } : o));
   };
 
   return (
@@ -108,6 +130,56 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
+      {/* Institution Onboarding Review Section */}
+      <div className="bg-navy-900/80 rounded-2xl border border-slate-800 p-6 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2">
+            <UserCheck className="w-5 h-5 text-blue-400" />
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">Institution Onboarding Approvals</h3>
+          </div>
+          <span className="text-xs text-slate-400 font-mono">{onboardings.length} Pending Application</span>
+        </div>
+
+        <div className="space-y-3">
+          {onboardings.map(item => (
+            <div key={item.id} className="p-4 rounded-xl bg-navy-950 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-white text-sm">{item.institutionName}</span>
+                  <span className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded ${
+                    item.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-400' :
+                    item.status === 'REJECTED' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'
+                  }`}>
+                    {item.status}
+                  </span>
+                </div>
+                <p className="text-slate-300">Nodal Officer: <strong className="text-white">{item.officerName}</strong> ({item.officerDesignation}) — <span className="font-mono text-blue-300">{item.officialDomainEmail}</span></p>
+                <p className="text-slate-400 text-[11px] font-mono">{item.documentationDetails}</p>
+              </div>
+
+              {item.status === 'SUBMITTED' && (
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => handleApproveOnboarding(item.id)}
+                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition-all flex items-center gap-1"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Approve & Issue Keys</span>
+                  </button>
+                  <button
+                    onClick={() => handleRejectOnboarding(item.id)}
+                    className="px-3.5 py-1.5 bg-red-950 hover:bg-red-900 border border-red-700 text-red-200 font-bold rounded-lg text-xs transition-all flex items-center gap-1"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Reject</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Live Ledger Integrity Scanner Panel */}
       <div className="bg-navy-900/80 rounded-2xl border border-slate-800 p-6 space-y-4 shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -131,7 +203,10 @@ export default function AdminDashboardPage() {
               <p className="text-xs text-slate-400">Validates `previous_hash` to `current_hash` from Genesis block.</p>
             </div>
           </div>
-          <span className="text-xs font-mono text-slate-400">Total Blocks: {ledgerReport?.totalBlocks || 0}</span>
+          <Link href="/admin/ledger" className="text-xs font-mono text-blue-400 hover:underline flex items-center gap-1">
+            <span>Open Auditor</span>
+            <ArrowUpRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
 
         {ledgerReport && (
@@ -145,27 +220,6 @@ export default function AdminDashboardPage() {
                 <span className="text-slate-500">Tip Block Hash:</span>
                 <p className="text-emerald-400 truncate mt-0.5">{ledgerReport.tipHash}</p>
               </div>
-            </div>
-
-            {/* Block Inspector List */}
-            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-              {ledgerReport.blocks?.map((block: any) => (
-                <div key={block.id} className="p-3 rounded-lg bg-navy-950 border border-slate-800 flex items-center justify-between text-[11px]">
-                  <div className="flex items-center gap-3">
-                    <span className="font-bold text-blue-400">#Block 0{block.index}</span>
-                    <span className="text-slate-400">{block.operation}</span>
-                    <span className="text-slate-500 hidden sm:inline">{block.certificateId}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-slate-400 font-mono hidden md:inline">Hash: {block.currentHash.substring(0, 16)}...</span>
-                    {block.isValid ? (
-                      <span className="text-emerald-400 font-bold">✓ VALID</span>
-                    ) : (
-                      <span className="text-red-400 font-bold">✕ CORRUPTED</span>
-                    )}
-                  </div>
-                </div>
-              ))}
             </div>
           </div>
         )}
