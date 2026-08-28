@@ -28,6 +28,8 @@ model Institution {
   officialName         String
   normalizedName       String
   shortName            String?
+  aisheCode            String?                       @unique // C-24902, U-0456
+  managementType       String?                       // Government, Private, Government-Aided, Deemed
   institutionType      String                        // University, IIT, NIT, Engineering College, Arts & Science, Autonomous College, etc.
   institutionCategory  String?                       // Government, Private, Deemed, Central
   establishedYear      Int?
@@ -66,7 +68,9 @@ model Institution {
 
   @@index([status])
   @@index([state])
+  @@index([district])
   @@index([city])
+  @@index([aisheCode])
   @@index([normalizedName])
 }
 

@@ -70,9 +70,11 @@ export default function InstitutionProfilePage() {
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs font-bold text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2.5 py-0.5 rounded">
-                {inst.publicId}
+                AISHE / ID: {inst.aisheCode || inst.publicId}
               </span>
-              <span className="text-xs text-slate-400 font-mono">UGC / AISHE Verified</span>
+              <span className="text-xs text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                Government Snapshot (2026.08)
+              </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white">{inst.officialName}</h1>
             <p className="text-xs text-slate-400 flex items-center gap-1.5">
@@ -88,7 +90,7 @@ export default function InstitutionProfilePage() {
               </span>
             ) : (
               <span className="px-4 py-2 rounded-xl text-xs font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1.5">
-                <AlertTriangle className="w-4 h-4 text-amber-400" /> NOT ONBOARDED
+                <AlertTriangle className="w-4 h-4 text-amber-400" /> DIRECTORY LISTING
               </span>
             )}
           </div>
@@ -118,24 +120,32 @@ export default function InstitutionProfilePage() {
 
           <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1.5 border-b border-slate-800/60">
-              <span className="text-slate-400">Institution Type:</span>
+              <span className="text-slate-400">AISHE Code:</span>
+              <span className="font-mono font-bold text-blue-400">{inst.aisheCode || inst.publicId}</span>
+            </div>
+            <div className="flex justify-between py-1.5 border-b border-slate-800/60">
+              <span className="text-slate-400">Institution Category:</span>
               <span className="font-semibold text-white">{inst.institutionType}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-800/60">
-              <span className="text-slate-400">Category / Funding:</span>
-              <span className="text-slate-200">{inst.institutionCategory || 'Government'}</span>
+              <span className="text-slate-400">Management Type:</span>
+              <span className="text-slate-200">{inst.managementType || inst.institutionCategory || 'Government'}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-800/60">
               <span className="text-slate-400">Established Year:</span>
               <span className="font-mono text-slate-200">{inst.establishedYear || 'N/A'}</span>
             </div>
+            {inst.accreditations && inst.accreditations[0] && (
+              <div className="flex justify-between py-1.5 border-b border-slate-800/60">
+                <span className="text-slate-400">Accreditation Grade:</span>
+                <span className="font-mono font-bold text-emerald-400">{inst.accreditations[0].grade}</span>
+              </div>
+            )}
             <div className="flex justify-between py-1.5 border-b border-slate-800/60">
-              <span className="text-slate-400">NAAC Accreditation:</span>
-              <span className="font-mono font-bold text-emerald-400">{inst.accreditation || 'UGC Approved'}</span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-slate-800/60">
-              <span className="text-slate-400">Data Source:</span>
-              <span className="font-mono text-blue-400">UGC / AISHE Master Database</span>
+              <span className="text-slate-400">Authoritative Source:</span>
+              <span className="font-mono text-blue-400 font-bold">
+                {inst.sources && inst.sources[0] ? inst.sources[0].sourceName : 'AISHE / UGC'}
+              </span>
             </div>
           </div>
         </div>

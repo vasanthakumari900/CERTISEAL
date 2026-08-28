@@ -4,6 +4,7 @@ import { buildCertificateCanonicalPayload } from '../lib/crypto/canonical';
 import { encryptField } from '../lib/crypto/encryption';
 import { hashPassword } from '../lib/auth/password';
 import { appendLedgerEntry } from '../lib/services/ledger-service';
+import { importNationalInstitutions } from '../scripts/import-institutions';
 
 const prisma = new PrismaClient();
 
@@ -27,6 +28,9 @@ async function main() {
   await prisma.institutionRequest.deleteMany();
   await prisma.institutionOnboarding.deleteMany();
   await prisma.institution.deleteMany();
+
+  // Import authoritative government-source national directory dataset
+  await importNationalInstitutions();
 
   // Helper for generating institution with encrypted Ed25519 keypair & regulatory data
   async function createNationalInst(data: {
