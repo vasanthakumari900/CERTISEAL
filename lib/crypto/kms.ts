@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { KMSClient, EncryptCommand, DecryptCommand } from '@aws-sdk/client-kms';
 
 export interface KMSWrapResult {
   encryptedDEK: string;
@@ -80,31 +81,91 @@ export class LocalKMSProvider implements KMSProvider {
 }
 
 /**
- * AWS KMS Adapter Stub
+ * Real AWS KMS Provider using Official AWS SDK v3.
+ * Wraps and unwraps 256-bit DEKs using AWS Key Management Service (Cloud HSM).
  */
 export class AWSKMSProvider implements KMSProvider {
+  private keyId: string;
+  private region: string;
+  private client: KMSClient | null = null;
+
+  constructor() {
+    this.region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || '';
+    this.keyId = process.env.AWS_KMS_KEY_ID || '';
+
+    // Validate mandatory AWS KMS configuration when active
+    if (!this.region || !this.keyId) {
+      throw new Error('AWS KMS configuration missing: AWS_REGION and AWS_KMS_KEY_ID are required when KMS_PROVIDER=aws');
+    }
+
+    this.client = new KMSClient({ region: this.region });
+  }
+
   async wrapKey(dek: Buffer): Promise<KMSWrapResult> {
-    throw new Error('AWS KMS requires configured AWS credentials and KMS Key ARN.');
+    if (!this.client) {
+      throw new Error('AWS KMS client initialized failed');
+    }
+
+    const command = new EncryptCommand({
+      KeyId: this.keyId,
+      Plaintext: dek,
+      EncryptionAlgorithm: 'SYMMETRIC_DEFAULT'
+    });
+
+    const response = await this.client.send(command);
+
+    if (!response.CiphertextBlob) {
+      throw new Error('AWS KMS Encrypt command failed to return CiphertextBlob');
+    }
+
+    return {
+      encryptedDEK: Buffer.from(response.CiphertextBlob).toString('base64'),
+      kmsKeyId: this.keyId,
+      providerType: 'PRODUCTION_AWS_KMS'
+    };
   }
+
   async unwrapKey(encryptedDEK: string, kmsKeyId: string): Promise<Buffer> {
-    throw new Error('AWS KMS requires configured AWS credentials.');
+    if (!this.client) {
+      throw new Error('AWS KMS client initialized failed');
+    }
+
+    const ciphertextBlob = Buffer.from(encryptedDEK, 'base64');
+
+    const command = new DecryptCommand({
+      CiphertextBlob: ciphertextBlob,
+      KeyId: kmsKeyId || this.keyId
+    });
+
+    const response = await this.client.send(command);
+
+    if (!response.Plaintext) {
+      throw new Error('AWS KMS Decrypt command failed to return Plaintext DEK');
+    }
+
+    return Buffer.from(response.Plaintext);
   }
+
   getProviderType(): string {
     return 'PRODUCTION_AWS_KMS';
   }
+
   getProviderDescription(): string {
-    return 'AWS KMS Cloud Managed HSM Key Provider';
+    return 'AWS KMS Cloud Managed Key Management Service (AES-256 / HSM)';
   }
 }
 
 /**
  * Factory function to retrieve the configured KMS Provider.
- * Defaults to LocalKMSProvider for SIH prototype deployment.
+ * Supports KMS_PROVIDER=local or KMS_PROVIDER=aws.
+ * Production mode MUST NOT silently fall back to prototype local KMS.
  */
 export function getKMSProvider(): KMSProvider {
-  const providerType = process.env.KMS_PROVIDER_TYPE || 'LOCAL';
-  if (providerType === 'AWS_KMS') {
+  const providerType = (process.env.KMS_PROVIDER || process.env.KMS_PROVIDER_TYPE || 'local').toLowerCase();
+
+  if (providerType === 'aws' || providerType === 'aws_kms' || providerType === 'aws-kms') {
     return new AWSKMSProvider();
   }
+
   return new LocalKMSProvider();
 }

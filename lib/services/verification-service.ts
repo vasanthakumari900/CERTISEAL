@@ -120,26 +120,67 @@ export async function verifyCertificate(
   const refSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
   const referenceId = `VER-2026-${refSuffix}`;
 
-  // 1. Fetch certificate record from database
-  const cert = await prisma.certificate.findFirst({
-    where: {
-      OR: [
-        { publicId: cleanId },
-        { id: publicIdInput }
-      ]
-    },
-    include: {
-      institution: {
-        include: {
-          accreditations: true
-        }
+  // 1. Fetch certificate record from database (Fail closed if DB connection fails)
+  let cert: any = null;
+  try {
+    cert = await prisma.certificate.findFirst({
+      where: {
+        OR: [
+          { publicId: cleanId },
+          { id: publicIdInput }
+        ]
       },
-      ledgerEntries: {
-        orderBy: { sequenceNumber: 'desc' },
-        take: 1
+      include: {
+        institution: {
+          include: {
+            accreditations: true
+          }
+        },
+        ledgerEntries: {
+          orderBy: { sequenceNumber: 'desc' },
+          take: 1
+        }
       }
-    }
-  });
+    });
+  } catch (err: any) {
+    const dbOfflineLevels: VerificationLevelStep[] = [
+      { level: 1, name: 'LEVEL 1 — Institution Identity', passed: false, score: 0, maxScore: 10, details: 'Database connection offline' },
+      { level: 2, name: 'LEVEL 2 — Issuer Authentication', passed: false, score: 0, maxScore: 10, details: 'Database connection offline' },
+      { level: 3, name: 'LEVEL 3 — Certificate Registry', passed: false, score: 0, maxScore: 15, details: 'Database connection offline' },
+      { level: 4, name: 'LEVEL 4 — SHA-256 Integrity', passed: false, score: 0, maxScore: 20, details: 'N/A' },
+      { level: 5, name: 'LEVEL 5 — Ed25519 Signature', passed: false, score: 0, maxScore: 20, details: 'N/A' },
+      { level: 6, name: 'LEVEL 6 — Hash-Chain Ledger', passed: false, score: 0, maxScore: 15, details: 'N/A' },
+      { level: 7, name: 'LEVEL 7 — Document Consistency', passed: false, score: 0, maxScore: 5, details: 'N/A' },
+      { level: 8, name: 'LEVEL 8 — Lifecycle Status', passed: false, score: 0, maxScore: 5, details: 'N/A' }
+    ];
+
+    return {
+      referenceId,
+      result: 'VERIFICATION_UNAVAILABLE',
+      certificateId: cleanId,
+      publicId: cleanId,
+      status: 'VERIFICATION_UNAVAILABLE',
+      statusExplanation: `Verification failed closed: PostgreSQL database connection unavailable or offline. Error: ${err.message || 'Connection failed'}`,
+      evidenceScore: 0,
+      evidenceChain: dbOfflineLevels,
+      verificationLevels: dbOfflineLevels,
+      institution: null,
+      certificateDetails: null,
+      cryptographicProof: {
+        canonicalHash: 'N/A',
+        recalculatedHash: 'N/A',
+        hashMatched: false,
+        digitalSignature: 'N/A',
+        signatureValid: false,
+        algorithm: 'Ed25519',
+        publicKeyFingerprint: 'N/A',
+        ledgerIntegrityValid: false,
+        envelopeEncrypted: true
+      },
+      aiExplanation: 'SECURITY ALERT: Verification engine failed closed due to database connectivity failure.',
+      verifiedAt
+    };
+  }
 
   // Handle NOT_FOUND or Un-onboarded Registry Listed Institutions
   if (!cert || !cert.institution) {
