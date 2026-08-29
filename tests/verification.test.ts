@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { verifyCertificate } from '../lib/services/verification-service';
-import { verifyLedgerIntegrity } from '../lib/services/ledger-service';
+import { verifyLedgerIntegrity, restoreDemoLedgerIntegrity } from '../lib/services/ledger-service';
 
 test('Verification Engine - VERIFIED state check', async () => {
+  await restoreDemoLedgerIntegrity();
   const res = await verifyCertificate('CERT-2026-000123');
   assert.equal(res.result, 'VERIFIED');
   assert.equal(res.status, 'VERIFIED');
@@ -60,6 +61,7 @@ test('Verification Engine - NOT_FOUND state check', async () => {
 });
 
 test('Ledger Integrity Scanner - Genesis to Tip validation', async () => {
+  await restoreDemoLedgerIntegrity();
   const report = await verifyLedgerIntegrity();
   assert.equal(report.isValid, true, 'Seeded ledger hash chain must be 100% valid');
   assert.ok(report.totalBlocks > 0, 'Blocks exist in ledger');

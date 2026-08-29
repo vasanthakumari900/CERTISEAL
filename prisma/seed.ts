@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { generateInstitutionKeyPair, signFingerprint } from '../lib/crypto/signatures';
 import { buildCertificateCanonicalPayload } from '../lib/crypto/canonical';
-import { encryptField } from '../lib/crypto/encryption';
+import { encryptField, encryptEnvelope } from '../lib/crypto/encryption';
 import { hashPassword } from '../lib/auth/password';
 import { appendLedgerEntry } from '../lib/services/ledger-service';
 import { importNationalInstitutions } from '../scripts/import-institutions';
@@ -9,9 +9,9 @@ import { importNationalInstitutions } from '../scripts/import-institutions';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seeding National CERTISEAL Master Registry with 100+ Colleges (including 15+ Chennai Colleges)...');
+  console.log('Seeding CERTX Master Registry with Envelope Encryption & 3-Surface Architecture...');
 
-  // Reset database
+  // Reset database tables
   await prisma.securityAlert.deleteMany();
   await prisma.verificationRequest.deleteMany();
   await prisma.auditLog.deleteMany();
@@ -19,6 +19,7 @@ async function main() {
   await prisma.certificateVersion.deleteMany();
   await prisma.certificate.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.accessApplication.deleteMany();
   await prisma.institutionKey.deleteMany();
   await prisma.institutionAlias.deleteMany();
   await prisma.institutionAffiliation.deleteMany();
@@ -29,10 +30,10 @@ async function main() {
   await prisma.institutionOnboarding.deleteMany();
   await prisma.institution.deleteMany();
 
-  // Import authoritative government-source national directory dataset
+  // Import authoritative national directory dataset
   await importNationalInstitutions();
 
-  // Helper for generating institution with encrypted Ed25519 keypair & regulatory data
+  // Helper for generating institution with encrypted keypair
   async function createNationalInst(data: {
     publicId: string;
     name: string;
@@ -117,24 +118,12 @@ async function main() {
   }
 
   // ----------------------------------------------------
-  // CHENNAI & NATIONAL COLLEGES
+  // SEED INSTITUTIONS
   // ----------------------------------------------------
   const iitMadras = await createNationalInst({
     publicId: 'INST-TN-000101', name: 'Indian Institute of Technology Madras', code: 'IITM',
     type: 'IIT', category: 'Government', year: 1959, website: 'https://iitm.ac.in', email: 'registrar@iitm.ac.in',
     city: 'Chennai', district: 'Chennai', state: 'Tamil Nadu', postalCode: '600036', status: 'PARTICIPATING', naacGrade: 'A++', aliases: ['IIT Madras', 'IITM', 'Chennai']
-  });
-
-  const cegAnna = await createNationalInst({
-    publicId: 'INST-TN-000102', name: 'College of Engineering Guindy Anna University', code: 'CEG',
-    type: 'Government College', category: 'Government', year: 1794, website: 'https://ceg.annauniv.edu', email: 'dean@ceg.annauniv.edu',
-    city: 'Chennai', district: 'Chennai', state: 'Tamil Nadu', postalCode: '600025', status: 'PARTICIPATING', naacGrade: 'A++', aliases: ['CEG Guindy', 'Anna University', 'CEG Chennai']
-  });
-
-  const mitChromepet = await createNationalInst({
-    publicId: 'INST-TN-000103', name: 'Madras Institute of Technology Chromepet', code: 'MIT',
-    type: 'Government College', category: 'Government', year: 1949, website: 'https://mitindia.edu', email: 'dean@mitindia.edu',
-    city: 'Chennai', district: 'Chennai', state: 'Tamil Nadu', postalCode: '600044', status: 'PARTICIPATING', naacGrade: 'A++', aliases: ['MIT Chromepet', 'MIT Chennai']
   });
 
   const nitTrichy = await createNationalInst({
@@ -150,28 +139,85 @@ async function main() {
   });
 
   // ----------------------------------------------------
-  // CREATE DEMO USERS WITH BCRYPT PASSWORD HASHES
+  // CREATE DEMO USERS WITH BCRYPT HASHES
   // ----------------------------------------------------
   const defaultPasswordHash = await hashPassword('SIH2026MasterPass!');
 
   const superAdmin = await prisma.user.create({
     data: { name: 'Dr. Vikramaditya (Super Admin)', email: 'superadmin@certiseal.gov.in', passwordHash: defaultPasswordHash, role: 'SUPER_ADMIN' }
   });
+
   const instAdmin = await prisma.user.create({
     data: { name: 'Prof. Ramesh K. (Inst Admin)', email: 'admin@nit.ac.in', passwordHash: defaultPasswordHash, role: 'INSTITUTION_ADMIN', institutionId: nitTrichy.inst.id }
   });
+
   const facultyIssuer = await prisma.user.create({
     data: { name: 'Dr. Priya Sharma (Faculty Issuer)', email: 'priya.sharma@nit.ac.in', passwordHash: defaultPasswordHash, role: 'FACULTY', institutionId: nitTrichy.inst.id }
   });
+
   const employerHr = await prisma.user.create({
-    data: { name: 'Vikram Mehta (Tata Recruiter)', email: 'recruiter@tata.com', passwordHash: defaultPasswordHash, role: 'COMPANY_HR' }
+    data: { name: 'Suresh Kumar (Tata Recruiter)', email: 'recruiter@tata.com', passwordHash: defaultPasswordHash, role: 'COMPANY_HR' }
   });
+
   const student = await prisma.user.create({
     data: { name: 'Rahul Kumar (Student)', email: 'rahul.kumar@student.nit.ac.in', passwordHash: defaultPasswordHash, role: 'STUDENT', institutionId: nitTrichy.inst.id }
   });
 
   // ----------------------------------------------------
-  // CERTIFICATE SEEDING HELPER
+  // SEED ACCESS APPLICATIONS
+  // ----------------------------------------------------
+  console.log('Seeding sample CERTX Access Applications...');
+  await prisma.accessApplication.create({
+    data: {
+      applicationId: 'CX-APP-2026-000001',
+      organizationName: 'Madras Institute of Technology Chromepet',
+      organizationType: 'Engineering College',
+      institutionOrOrgId: 'C-24902',
+      officialEmail: 'dean@mitindia.edu',
+      contactPerson: 'Dr. K. Swaminathan',
+      designation: 'Dean of Academics',
+      phone: '+91 44 2251 6000',
+      state: 'Tamil Nadu',
+      district: 'Chennai',
+      city: 'Chennai',
+      officialWebsite: 'https://mitindia.edu',
+      address: 'Chromepet, Chennai, Tamil Nadu',
+      reason: 'Automating degree certificate issuance and multi-level HR verification',
+      expectedUsers: '10-50',
+      expectedVolume: '1,000 - 10,000/year',
+      declarationConsent: true,
+      status: 'PENDING'
+    }
+  });
+
+  await prisma.accessApplication.create({
+    data: {
+      applicationId: 'CX-APP-2026-000002',
+      organizationName: 'Anna University Guindy',
+      organizationType: 'University',
+      institutionOrOrgId: 'U-0456',
+      officialEmail: 'registrar@annauniv.edu',
+      contactPerson: 'Prof. S. Ranganathan',
+      designation: 'Registrar',
+      phone: '+91 44 2235 7004',
+      state: 'Tamil Nadu',
+      district: 'Chennai',
+      city: 'Chennai',
+      officialWebsite: 'https://annauniv.edu',
+      address: 'Sardar Patel Road, Guindy, Chennai',
+      reason: 'Central university credential vault and automated verification engine',
+      expectedUsers: '50+',
+      expectedVolume: '> 50,000/year',
+      declarationConsent: true,
+      status: 'APPROVED',
+      reviewedAt: new Date(),
+      reviewedBy: superAdmin.name,
+      reviewNotes: 'Verified official university registration and approved for CERTX platform.'
+    }
+  });
+
+  // ----------------------------------------------------
+  // SEED CERTIFICATES WITH ENVELOPE ENCRYPTION
   // ----------------------------------------------------
   async function seedCert(params: {
     publicId: string;
@@ -204,7 +250,9 @@ async function main() {
 
     const canonicalHash = require('crypto').createHash('sha256').update(canonicalPayload, 'utf8').digest('hex');
     const digitalSignature = signFingerprint(canonicalHash, params.privateKey);
-    const encryptedData = encryptField(JSON.stringify({ studentName: params.studentName, studentRollNo: params.studentRollNo }));
+
+    const sensitivePayload = JSON.stringify({ studentName: params.studentName, studentRollNo: params.studentRollNo, cgpa: params.cgpa });
+    const envelopeResult = await encryptEnvelope(sensitivePayload);
 
     const cert = await prisma.certificate.create({
       data: {
@@ -212,7 +260,14 @@ async function main() {
         institutionId: params.institution.id,
         studentName: params.studentName,
         studentRollNo: params.studentRollNo,
-        encryptedStudentData: encryptedData,
+        encryptedStudentData: encryptField(sensitivePayload),
+        encryptedPayload: envelopeResult.encryptedPayload,
+        encryptedDEK: envelopeResult.encryptedDEK,
+        iv: envelopeResult.iv,
+        authTag: envelopeResult.authTag,
+        kmsKeyId: envelopeResult.kmsKeyId,
+        encryptionAlgorithm: envelopeResult.encryptionAlgorithm,
+        encryptionVersion: envelopeResult.encryptionVersion,
         course: params.course,
         department: params.department,
         certificateType: params.certificateType,
@@ -235,7 +290,7 @@ async function main() {
         canonicalHash,
         digitalSignature,
         changedBy: 'Dr. Priya Sharma',
-        changeReason: 'Initial Cryptographic Issuance',
+        changeReason: 'Initial Cryptographic Envelope Issuance',
         snapshotData: canonicalPayload
       }
     });
@@ -313,7 +368,7 @@ async function main() {
     revocationReason: 'Official cancellation due to academic misconduct and falsified project submission'
   });
 
-  console.log('Seeding completed successfully with Bcrypt hashed passwords!');
+  console.log('Seeding completed successfully with envelope encryption, DEKs, and 3-surface data!');
 }
 
 main()

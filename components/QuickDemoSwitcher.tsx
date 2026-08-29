@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Shield, Building2, GraduationCap, Briefcase, UserCheck, ChevronDown, CheckCircle2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Shield, Building2, GraduationCap, Briefcase, UserCheck, ChevronDown, CheckCircle2, ArrowRight } from 'lucide-react';
 
 export interface UserSession {
   id: string;
@@ -16,33 +17,41 @@ const DEMO_ROLES = [
   {
     role: 'SUPER_ADMIN',
     label: 'Super Admin',
+    surface: 'Admin Portal',
+    targetUrl: '/admin/dashboard',
     name: 'Dr. Vikramaditya',
     email: 'superadmin@certiseal.gov.in',
     icon: Shield,
     badgeColor: 'bg-purple-950/80 text-purple-300 border-purple-800/50',
-    desc: 'Platform governance, institution approvals, security & ledger scanner'
+    desc: 'Super Admin governance, application review & tamper simulator'
   },
   {
     role: 'INSTITUTION_ADMIN',
     label: 'Institution Admin',
+    surface: 'CERTX Platform',
+    targetUrl: '/institution/dashboard',
     name: 'Prof. Ramesh K. (NIT)',
     email: 'admin@nit.ac.in',
     icon: Building2,
     badgeColor: 'bg-blue-950/80 text-blue-300 border-blue-800/50',
-    desc: 'Cert issuance, key rotation, hold/release/revocation management'
+    desc: 'Manage issuers, key rotation, hold/release/revocation'
   },
   {
     role: 'FACULTY',
     label: 'Faculty Issuer',
+    surface: 'CERTX Platform',
+    targetUrl: '/institution/certificates/issue',
     name: 'Dr. Priya Sharma (NIT)',
     email: 'priya.sharma@nit.ac.in',
     icon: GraduationCap,
     badgeColor: 'bg-emerald-950/80 text-emerald-300 border-emerald-800/50',
-    desc: 'Issue new certificates, dynamic forms, seal & QR preview'
+    desc: 'Issue new certificates with Envelope Encryption & DEK'
   },
   {
     role: 'COMPANY',
     label: 'Employer / HR',
+    surface: 'CERTX Platform',
+    targetUrl: '/company/dashboard',
     name: 'Suresh Kumar (Tata)',
     email: 'recruiter@tata.com',
     icon: Briefcase,
@@ -52,6 +61,8 @@ const DEMO_ROLES = [
   {
     role: 'STUDENT',
     label: 'Student',
+    surface: 'CERTX Platform',
+    targetUrl: '/student/dashboard',
     name: 'Rahul Kumar',
     email: 'rahul.kumar@student.nit.ac.in',
     icon: UserCheck,
@@ -61,6 +72,7 @@ const DEMO_ROLES = [
 ];
 
 export default function QuickDemoSwitcher() {
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
   const [isOpen, setIsOpen] = useState(false);
 
@@ -71,12 +83,12 @@ export default function QuickDemoSwitcher() {
         setCurrentUser(JSON.parse(stored));
       } catch (e) {}
     } else {
-      // Default to Employer for easy verification demo
-      switchRole('COMPANY');
+      // Default to Employer demo
+      switchRole('COMPANY', false);
     }
   }, []);
 
-  const switchRole = async (targetRole: string) => {
+  const switchRole = async (targetRole: string, navigate: boolean = true) => {
     const demoItem = DEMO_ROLES.find(r => r.role === targetRole) || DEMO_ROLES[3];
     try {
       const res = await fetch('/api/auth/login', {
@@ -92,8 +104,11 @@ export default function QuickDemoSwitcher() {
         setCurrentUser(data.user);
         localStorage.setItem('certiseal_user', JSON.stringify(data.user));
         setIsOpen(false);
-        // Dispatch custom event for instant UI update
         window.dispatchEvent(new Event('auth-state-change'));
+
+        if (navigate) {
+          router.push(demoItem.targetUrl);
+        }
       }
     } catch (err) {
       console.error('Role switch failed:', err);
@@ -117,10 +132,10 @@ export default function QuickDemoSwitcher() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 rounded-xl bg-navy-950 border border-slate-700 shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95">
+        <div className="absolute right-0 mt-2 w-88 rounded-xl bg-navy-950 border border-slate-700 shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95">
           <div className="px-3 py-2 border-b border-slate-800 mb-1">
-            <p className="text-xs font-bold text-slate-300 uppercase tracking-wider">SIH Judge Demo Switcher</p>
-            <p className="text-[11px] text-slate-400">Switch roles instantly to test end-to-end flows</p>
+            <p className="text-xs font-bold text-slate-300 uppercase tracking-wider">CERTX Surface Switcher</p>
+            <p className="text-[11px] text-slate-400">Authentic login API switch between isolated surfaces</p>
           </div>
           <div className="space-y-1 max-h-96 overflow-y-auto">
             {DEMO_ROLES.map(item => {
@@ -130,7 +145,7 @@ export default function QuickDemoSwitcher() {
               return (
                 <button
                   key={item.role}
-                  onClick={() => switchRole(item.role)}
+                  onClick={() => switchRole(item.role, true)}
                   className={`w-full text-left p-2.5 rounded-lg text-xs transition-all flex items-start gap-2.5 ${
                     isSelected
                       ? 'bg-blue-600/20 border border-blue-500/50 text-white'
@@ -143,7 +158,9 @@ export default function QuickDemoSwitcher() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold">{item.label}</span>
-                      {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />}
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                        → {item.surface}
+                      </span>
                     </div>
                     <p className="text-[11px] text-slate-400 truncate">{item.name}</p>
                     <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{item.desc}</p>

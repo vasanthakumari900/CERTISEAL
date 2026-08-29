@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { canonicalize } from '../lib/crypto/canonical';
 import { generateCertificateHash } from '../lib/crypto/hashing';
 import { generateInstitutionKeyPair, signFingerprint, verifySignature } from '../lib/crypto/signatures';
-import { encryptField, decryptField } from '../lib/crypto/encryption';
+import { encryptField, decryptField, encryptEnvelope, decryptEnvelope } from '../lib/crypto/encryption';
+import { getKMSProvider, LocalKMSProvider } from '../lib/crypto/kms';
 
 test('Canonicalization - Key order independence', () => {
   const obj1 = { b: 2, a: 1, c: { y: 20, x: 10 } };
@@ -63,4 +64,39 @@ test('AES-256-GCM Payload Encryption & Decryption', () => {
 
   const decrypted = decryptField(encrypted);
   assert.equal(decrypted, secretText, 'Decrypted payload must match original string');
+});
+
+test('Envelope Encryption with Per-Certificate DEK & KMS Wrapping', async () => {
+  const plainText = JSON.stringify({ studentName: 'Rahul Kumar', cgpa: '8.72' });
+  const envelope = await encryptEnvelope(plainText);
+
+  assert.ok(envelope.encryptedPayload.length > 0, 'Encrypted ciphertext produced');
+  assert.ok(envelope.encryptedDEK.length > 0, 'KMS wrapped DEK produced');
+  assert.equal(envelope.encryptionAlgorithm, 'AES-256-GCM');
+  assert.equal(envelope.kmsKeyId, 'local-master-kek-v1');
+
+  const decrypted = await decryptEnvelope(
+    envelope.encryptedPayload,
+    envelope.encryptedDEK,
+    envelope.iv,
+    envelope.authTag,
+    envelope.kmsKeyId
+  );
+
+  assert.equal(decrypted, plainText, 'Decrypted envelope payload matches original plaintext');
+});
+
+test('KMS Provider Abstraction - LocalKMSProvider Fail Closed Check', async () => {
+  const kms = getKMSProvider();
+  assert.equal(kms.getProviderType(), 'PROTOTYPE_LOCAL_KEK');
+
+  const savedKey = process.env.ENCRYPTION_MASTER_KEY;
+  delete process.env.ENCRYPTION_MASTER_KEY;
+
+  const localKms = new LocalKMSProvider();
+  await assert.rejects(async () => {
+    await localKms.wrapKey(Buffer.from('0123456789abcdef0123456789abcdef', 'hex'));
+  }, /ENCRYPTION_MASTER_KEY is required/);
+
+  process.env.ENCRYPTION_MASTER_KEY = savedKey;
 });

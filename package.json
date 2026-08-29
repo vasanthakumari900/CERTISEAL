@@ -9,7 +9,7 @@
     "lint": "next lint",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
-    "test": "node --import tsx/esm --test tests/**/*.test.ts"
+    "test": "node --import tsx/esm --test --test-concurrency=1 tests/**/*.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.19.0",

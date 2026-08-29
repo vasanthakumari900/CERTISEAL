@@ -186,7 +186,14 @@ model Certificate {
   institution          Institution          @relation(fields: [institutionId], references: [id])
   studentName          String
   studentRollNo        String
-  encryptedStudentData String?              // AES-256-GCM encrypted payload
+  encryptedStudentData String?              // Deprecated legacy field / backup
+  encryptedPayload     String?              // AES-256-GCM encrypted payload ciphertext
+  encryptedDEK         String?              // KMS-wrapped per-certificate DEK
+  iv                   String?              // Initialization vector / nonce
+  authTag              String?              // AES-256-GCM authentication tag
+  kmsKeyId             String?              // KMS Key ID (e.g. local-master-v1 or AWS KMS ARN)
+  encryptionAlgorithm  String?              @default("AES-256-GCM")
+  encryptionVersion    String?              @default("v1.0")
   course               String
   department           String
   certificateType      String               // Degree, Diploma, Internship, Transfer Certificate, etc.
@@ -215,6 +222,37 @@ model Certificate {
   @@index([institutionId])
   @@index([studentRollNo])
   @@index([status])
+}
+
+model AccessApplication {
+  id                   String    @id @default(uuid())
+  applicationId        String    @unique // CX-APP-2026-000001
+  organizationName     String
+  organizationType     String    // University, College, Enterprise, Govt Agency, Verification Agency
+  institutionOrOrgId   String?   // AISHE code or registration number
+  officialEmail        String
+  contactPerson        String
+  designation          String
+  phone                String
+  state                String
+  district             String
+  city                 String
+  officialWebsite      String
+  address              String
+  reason               String
+  expectedUsers        String?
+  expectedVolume       String?
+  supportingDocs       String?   // Notes or URL of supporting docs
+  declarationConsent   Boolean   @default(true)
+  status               String    @default("PENDING") // PENDING, UNDER_REVIEW, APPROVED, REJECTED, ADDITIONAL_INFO_REQUIRED
+  submittedAt          DateTime  @default(now())
+  reviewedAt           DateTime?
+  reviewedBy           String?
+  reviewNotes          String?
+
+  @@index([applicationId])
+  @@index([status])
+  @@index([officialEmail])
 }
 
 model CertificateVersion {

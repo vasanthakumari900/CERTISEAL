@@ -6,8 +6,10 @@ import { verifySignature } from '../crypto/signatures';
 import { logAuditEvent } from './audit-service';
 import { verifyLedgerIntegrity } from './ledger-service';
 import { analyzeDocumentForensics, DocumentForensicResult } from './forensic-service';
+import { decryptEnvelope } from '../crypto/encryption';
 
-export interface EvidenceChainStep {
+export interface VerificationLevelStep {
+  level: number;
   name: string;
   passed: boolean;
   score: number;
@@ -23,7 +25,8 @@ export interface VerificationResultPayload {
   status: string;
   statusExplanation: string;
   evidenceScore: number;
-  evidenceChain: EvidenceChainStep[];
+  evidenceChain: VerificationLevelStep[];
+  verificationLevels: VerificationLevelStep[];
   institution: {
     id: string;
     publicId: string;
@@ -61,6 +64,8 @@ export interface VerificationResultPayload {
     publicKeyFingerprint: string;
     ledgerIntegrityValid: boolean;
     encryptedDataPayload: string;
+    kmsKeyId?: string;
+    encryptionAlgorithm?: string;
   };
   documentComparison?: {
     isDocumentUploaded: boolean;
@@ -142,23 +147,27 @@ export async function verifyCertificate(
     });
 
     if (registryInst && registryInst.status === 'NOT_ONBOARDED') {
+      const unavailableLevels: VerificationLevelStep[] = [
+        { level: 1, name: 'LEVEL 1 — Institution Identity', passed: true, score: 10, maxScore: 10, details: `Listed in National Registry: ${registryInst.officialName}` },
+        { level: 2, name: 'LEVEL 2 — Issuer Authentication', passed: false, score: 0, maxScore: 10, details: 'Institution not onboarded on CERTX' },
+        { level: 3, name: 'LEVEL 3 — Certificate Registry', passed: false, score: 0, maxScore: 15, details: 'Certificate registry record unavailable' },
+        { level: 4, name: 'LEVEL 4 — SHA-256 Integrity', passed: false, score: 0, maxScore: 20, details: 'Hash recalculation N/A' },
+        { level: 5, name: 'LEVEL 5 — Ed25519 Signature', passed: false, score: 0, maxScore: 20, details: 'Digital signature N/A' },
+        { level: 6, name: 'LEVEL 6 — Hash-Chain Ledger', passed: false, score: 0, maxScore: 15, details: 'Ledger audit N/A' },
+        { level: 7, name: 'LEVEL 7 — Document Consistency', passed: false, score: 0, maxScore: 5, details: 'Document match N/A' },
+        { level: 8, name: 'LEVEL 8 — Lifecycle Status', passed: false, score: 0, maxScore: 5, details: 'Lifecycle status N/A' }
+      ];
+
       return {
         referenceId,
         result: 'VERIFICATION_UNAVAILABLE',
         certificateId: cleanId,
         publicId: cleanId,
         status: 'NOT_ONBOARDED',
-        statusExplanation: 'The institution exists in the National Institution Registry but has not yet joined the CERTISEAL trust network.',
-        evidenceScore: 30,
-        evidenceChain: [
-          { name: 'Institution Registry Record', passed: true, score: 20, maxScore: 20, details: `Listed: ${registryInst.officialName}` },
-          { name: 'CERTISEAL Participation', passed: false, score: 0, maxScore: 10, details: 'Not Onboarded' },
-          { name: 'Certificate Record', passed: false, score: 0, maxScore: 20, details: 'Unavailable' },
-          { name: 'SHA-256 Fingerprint', passed: false, score: 0, maxScore: 25, details: 'N/A' },
-          { name: 'Ed25519 Signature', passed: false, score: 0, maxScore: 20, details: 'N/A' },
-          { name: 'Hash Chain Ledger', passed: false, score: 0, maxScore: 15, details: 'N/A' },
-          { name: 'Status Compliance', passed: false, score: 0, maxScore: 10, details: 'Unavailable' }
-        ],
+        statusExplanation: 'The institution exists in the National Institution Registry but has not yet joined the CERTX trust network.',
+        evidenceScore: 10,
+        evidenceChain: unavailableLevels,
+        verificationLevels: unavailableLevels,
         institution: {
           id: registryInst.id,
           publicId: registryInst.publicId,
@@ -184,10 +193,21 @@ export async function verifyCertificate(
           ledgerIntegrityValid: false,
           encryptedDataPayload: 'N/A'
         },
-        aiExplanation: `Institution ${registryInst.officialName} is listed in the National Registry, but has not yet onboarded to CERTISEAL. Click 'Request Institution to Join' to notify university administrators.`,
+        aiExplanation: `Institution ${registryInst.officialName} is listed in the National Registry, but has not yet onboarded to CERTX. Click 'Apply for CERTX Access' or request university administrators to onboard.`,
         verifiedAt
       };
     }
+
+    const notFoundLevels: VerificationLevelStep[] = [
+      { level: 1, name: 'LEVEL 1 — Institution Identity', passed: false, score: 0, maxScore: 10, details: 'Unverified Institution' },
+      { level: 2, name: 'LEVEL 2 — Issuer Authentication', passed: false, score: 0, maxScore: 10, details: 'Issuer Unrecognized' },
+      { level: 3, name: 'LEVEL 3 — Certificate Registry', passed: false, score: 0, maxScore: 15, details: 'Record Not Found in CERTX Database' },
+      { level: 4, name: 'LEVEL 4 — SHA-256 Integrity', passed: false, score: 0, maxScore: 20, details: 'N/A' },
+      { level: 5, name: 'LEVEL 5 — Ed25519 Signature', passed: false, score: 0, maxScore: 20, details: 'N/A' },
+      { level: 6, name: 'LEVEL 6 — Hash-Chain Ledger', passed: false, score: 0, maxScore: 15, details: 'N/A' },
+      { level: 7, name: 'LEVEL 7 — Document Consistency', passed: false, score: 0, maxScore: 5, details: 'N/A' },
+      { level: 8, name: 'LEVEL 8 — Lifecycle Status', passed: false, score: 0, maxScore: 5, details: 'N/A' }
+    ];
 
     return {
       referenceId,
@@ -197,14 +217,8 @@ export async function verifyCertificate(
       status: 'NOT_FOUND',
       statusExplanation: 'No trusted institutional record could be found for the supplied certificate ID.',
       evidenceScore: 0,
-      evidenceChain: [
-        { name: 'Certificate Found', passed: false, score: 0, maxScore: 20, details: 'Record Not Found' },
-        { name: 'Institution Valid', passed: false, score: 0, maxScore: 10, details: 'N/A' },
-        { name: 'SHA-256 Hash Match', passed: false, score: 0, maxScore: 25, details: 'N/A' },
-        { name: 'Ed25519 Signature', passed: false, score: 0, maxScore: 20, details: 'N/A' },
-        { name: 'Ledger Integrity', passed: false, score: 0, maxScore: 15, details: 'N/A' },
-        { name: 'Document Match', passed: false, score: 0, maxScore: 10, details: 'N/A' }
-      ],
+      evidenceChain: notFoundLevels,
+      verificationLevels: notFoundLevels,
       institution: null,
       certificateDetails: null,
       cryptographicProof: {
@@ -218,7 +232,7 @@ export async function verifyCertificate(
         ledgerIntegrityValid: false,
         encryptedDataPayload: 'N/A'
       },
-      aiExplanation: 'The certificate ID was not found in the institution trust registry. Note that absence of a record does not automatically prove forgery, but it indicates no cryptographically sealed record exists on CERTISEAL.',
+      aiExplanation: 'The certificate ID was not found in the institution trust registry. Absence of a record indicates no cryptographically sealed record exists on CERTX.',
       verifiedAt
     };
   }
@@ -246,7 +260,6 @@ export async function verifyCertificate(
   const hashMatched = recalculatedHash.toLowerCase() === cert.canonicalHash.toLowerCase();
 
   // 3. Fail-Closed Ed25519 Signature Verification
-  // FAIL CLOSED: If public key is missing or signature is missing, signatureValid MUST be false
   const signatureValid = (cert.institution.publicKey && cert.digitalSignature)
     ? verifySignature(cert.canonicalHash, cert.digitalSignature, cert.institution.publicKey)
     : false;
@@ -255,7 +268,23 @@ export async function verifyCertificate(
   const ledgerAudit = await verifyLedgerIntegrity();
   const ledgerValid = ledgerAudit.isValid && cert.ledgerEntries.length > 0;
 
-  // 5. Document Upload OCR & Risk Signal Comparison
+  // 5. Envelope Decryption check if encryptedPayload + DEK exist
+  let decryptedPayloadPreview = cert.encryptedStudentData || '';
+  if (cert.encryptedPayload && cert.encryptedDEK && cert.iv && cert.authTag) {
+    try {
+      decryptedPayloadPreview = await decryptEnvelope(
+        cert.encryptedPayload,
+        cert.encryptedDEK,
+        cert.iv,
+        cert.authTag,
+        cert.kmsKeyId || undefined
+      );
+    } catch (err) {
+      console.error('KMS envelope decryption failed during verification:', err);
+    }
+  }
+
+  // 6. Document Upload OCR & Risk Signal Comparison
   let isDocumentUploaded = false;
   let isDocumentMatch = true;
   const fieldDiffs: Array<{ field: string; trustedValue: string; submittedValue: string; isMatch: boolean }> = [];
@@ -292,7 +321,7 @@ export async function verifyCertificate(
     forensics = analyzeDocumentForensics(up.rawText || '', up.fileName || '', isDocumentMatch);
   }
 
-  // 6. Determine Final Result State
+  // 7. Determine Final Result State
   let finalResult: 'VERIFIED' | 'ON_HOLD' | 'RELEASED' | 'REVOKED' | 'TAMPERED' | 'NOT_FOUND' | 'VERIFICATION_UNAVAILABLE' = 'VERIFIED';
   let statusExplanation = 'Certificate is authentic, cryptographically verified, and currently valid.';
 
@@ -312,24 +341,82 @@ export async function verifyCertificate(
     statusExplanation = 'Certificate was previously on hold and has been officially cleared and released by the institution.';
   }
 
-  // 7-Step Evidence Chain Calculation
-  const evidenceChain: EvidenceChainStep[] = [
-    { name: 'Certificate Found', passed: true, score: 20, maxScore: 20, details: `Record ID: ${cert.publicId}` },
-    { name: 'Institution Valid', passed: cert.institution.status !== 'SUSPENDED', score: 10, maxScore: 10, details: `${cert.institution.officialName} (${cert.institution.status})` },
-    { name: 'SHA-256 Hash Match', passed: hashMatched, score: hashMatched ? 25 : 0, maxScore: 25, details: hashMatched ? 'Canonical Fingerprint Matched' : 'Hash Mismatch' },
-    { name: 'Ed25519 Signature', passed: signatureValid, score: signatureValid ? 20 : 0, maxScore: 20, details: signatureValid ? 'Digital Signature Valid' : 'Signature Invalid / Key Missing' },
-    { name: 'Ledger Integrity', passed: ledgerValid, score: ledgerValid ? 15 : 0, maxScore: 15, details: ledgerValid ? 'Genesis Chain Valid' : 'Ledger Integrity Flagged' },
-    { name: 'Document Comparison', passed: isDocumentMatch, score: isDocumentMatch ? 10 : 0, maxScore: 10, details: isDocumentMatch ? '100% Match' : 'Mismatched Fields' }
+  // 8-Level Verification Chain explicit evaluation
+  const verificationLevels: VerificationLevelStep[] = [
+    {
+      level: 1,
+      name: 'LEVEL 1 — Institution Identity',
+      passed: cert.institution.status !== 'SUSPENDED',
+      score: cert.institution.status !== 'SUSPENDED' ? 10 : 0,
+      maxScore: 10,
+      details: `${cert.institution.officialName} (Status: ${cert.institution.status})`
+    },
+    {
+      level: 2,
+      name: 'LEVEL 2 — Issuer Authentication',
+      passed: !!cert.institution.publicKey,
+      score: cert.institution.publicKey ? 10 : 0,
+      maxScore: 10,
+      details: cert.institution.publicKey ? `Issuer Key FP: ${cert.institution.publicKeyFingerprint?.substring(0, 16)}...` : 'Missing Issuer Public Key'
+    },
+    {
+      level: 3,
+      name: 'LEVEL 3 — Certificate Registry',
+      passed: true,
+      score: 15,
+      maxScore: 15,
+      details: `Registered in CERTX Database: ${cert.publicId}`
+    },
+    {
+      level: 4,
+      name: 'LEVEL 4 — SHA-256 Integrity',
+      passed: hashMatched,
+      score: hashMatched ? 20 : 0,
+      maxScore: 20,
+      details: hashMatched ? 'Canonical JSON SHA-256 Hash Matched' : 'Hash Mismatch Detected'
+    },
+    {
+      level: 5,
+      name: 'LEVEL 5 — Ed25519 Signature',
+      passed: signatureValid,
+      score: signatureValid ? 20 : 0,
+      maxScore: 20,
+      details: signatureValid ? 'Digital Signature Verified' : 'Invalid Ed25519 Signature'
+    },
+    {
+      level: 6,
+      name: 'LEVEL 6 — Hash-Chain Ledger',
+      passed: ledgerValid,
+      score: ledgerValid ? 15 : 0,
+      maxScore: 15,
+      details: ledgerValid ? 'Genesis-to-Tip Ledger Chain Valid' : 'Ledger Integrity Alert'
+    },
+    {
+      level: 7,
+      name: 'LEVEL 7 — Document Consistency',
+      passed: isDocumentMatch,
+      score: isDocumentMatch ? 5 : 0,
+      maxScore: 5,
+      details: isDocumentUploaded ? (isDocumentMatch ? '100% OCR Attribute Match' : 'Mismatched OCR Attributes') : 'Trusted Registry Baseline Verified'
+    },
+    {
+      level: 8,
+      name: 'LEVEL 8 — Lifecycle Status',
+      passed: cert.status !== 'REVOKED' && cert.status !== 'ON_HOLD',
+      score: cert.status === 'VERIFIED' || cert.status === 'RELEASED' ? 5 : 0,
+      maxScore: 5,
+      details: `Current Status: ${cert.status}`
+    }
   ];
 
-  const evidenceScore = evidenceChain.reduce((sum, step) => sum + step.score, 0);
+  const evidenceScore = verificationLevels.reduce((sum, step) => sum + step.score, 0);
 
   // Intelligence Explanation Summary
   let aiExplanation = '';
   if (finalResult === 'VERIFIED' || finalResult === 'RELEASED') {
-    aiExplanation = `The certificate ID ${cert.publicId} exists in ${cert.institution.officialName}'s registry. The SHA-256 canonical hash matches the institutional record, the Ed25519 signature is cryptographically valid, and ledger chain integrity is verified. Weighted Evidence Score: ${evidenceScore}/100.`;
+    aiExplanation = `The certificate ID ${cert.publicId} exists in ${cert.institution.officialName}'s registry. The SHA-256 canonical hash matches, Ed25519 signature is valid, and hash-chain ledger integrity passes all 8 verification levels. Weighted Evidence Score: ${evidenceScore}/100.`;
   } else if (finalResult === 'ON_HOLD') {
-    aiExplanation = `The certificate ID ${cert.publicId} is authentic and cryptographically verified. However, ${cert.institution.officialName} has placed it on temporary administrative hold (${cert.holdReason || 'Administrative clearance pending'}). This does NOT indicate that the certificate is fake. Recommendation: DO NOT RELY until hold is cleared.`;
+    aiExplanation = `The certificate ID ${cert.publicId} is authentic and cryptographically verified. However, ${cert.institution.officialName} has placed it on temporary administrative hold (${cert.holdReason || 'Administrative clearance pending'}). This does NOT mean the certificate is fake. Recommendation: DO NOT RELY until hold is cleared.`;
   } else if (finalResult === 'REVOKED') {
     aiExplanation = `The certificate ID ${cert.publicId} was cryptographically authentic when issued by ${cert.institution.officialName}, but was officially revoked on ${cert.revokedAt ? cert.revokedAt.toISOString().split('T')[0] : 'record date'} due to: ${cert.revocationReason || 'Administrative cancellation'}. Recommendation: DO NOT RELY.`;
   } else if (finalResult === 'TAMPERED') {
@@ -355,7 +442,8 @@ export async function verifyCertificate(
     status: cert.status,
     statusExplanation,
     evidenceScore,
-    evidenceChain,
+    evidenceChain: verificationLevels,
+    verificationLevels,
     institution: {
       id: cert.institution.id,
       publicId: cert.institution.publicId,
@@ -392,7 +480,9 @@ export async function verifyCertificate(
       algorithm: 'Ed25519',
       publicKeyFingerprint: cert.institution.publicKeyFingerprint || 'ED25519-FP-DEFAULT',
       ledgerIntegrityValid: ledgerValid,
-      encryptedDataPayload: cert.encryptedStudentData || 'N/A'
+      encryptedDataPayload: decryptedPayloadPreview || cert.encryptedStudentData || 'N/A',
+      kmsKeyId: cert.kmsKeyId || 'local-master-kek-v1',
+      encryptionAlgorithm: cert.encryptionAlgorithm || 'AES-256-GCM'
     },
     documentComparison: isDocumentUploaded
       ? {

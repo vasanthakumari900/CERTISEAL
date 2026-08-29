@@ -4,7 +4,7 @@ import { requireAuth, requireRole, getSession } from '@/lib/auth/session';
 import { generateCertificateHash } from '@/lib/crypto/hashing';
 import { buildCertificateCanonicalPayload } from '@/lib/crypto/canonical';
 import { signFingerprint, generateInstitutionKeyPair } from '@/lib/crypto/signatures';
-import { encryptField, decryptField } from '@/lib/crypto/encryption';
+import { encryptField, decryptField, encryptEnvelope } from '@/lib/crypto/encryption';
 import { appendLedgerEntry } from '@/lib/services/ledger-service';
 import { logAuditEvent } from '@/lib/services/audit-service';
 import { CertificateIssuanceSchema } from '@/lib/validation/schemas';
@@ -117,6 +117,13 @@ export async function POST(req: Request) {
       );
     }
 
+    if (institution.status === 'SUSPENDED' || institution.status === 'INACTIVE' || institution.status === 'REJECTED') {
+      return NextResponse.json(
+        { error: `FORBIDDEN: Organization ${institution.officialName} is currently ${institution.status}. Certificate issuance suspended.` },
+        { status: 403 }
+      );
+    }
+
     targetInstitutionId = institution.id;
 
     let publicId = body.publicId ? body.publicId.trim().toUpperCase() : '';
@@ -175,11 +182,12 @@ export async function POST(req: Request) {
       );
     }
 
-    const sensitivePayload = JSON.stringify({ studentName, studentRollNo });
-    const encryptedStudentData = encryptField(sensitivePayload);
+    // 5. Envelope Encryption with unique 256-bit per-certificate DEK and KMS Wrapping
+    const sensitivePayload = JSON.stringify({ studentName, studentRollNo, course, department, cgpa, marks });
+    const envelopeResult = await encryptEnvelope(sensitivePayload);
 
     const instCode = institution.shortName || 'NITT';
-    
+
     // Authoritative 14-field canonical payload reconstruction
     const canonicalPayload = buildCertificateCanonicalPayload({
       certificateId: publicId,
@@ -214,7 +222,14 @@ export async function POST(req: Request) {
         institutionId: targetInstitutionId,
         studentName,
         studentRollNo,
-        encryptedStudentData,
+        encryptedStudentData: encryptField(sensitivePayload),
+        encryptedPayload: envelopeResult.encryptedPayload,
+        encryptedDEK: envelopeResult.encryptedDEK,
+        iv: envelopeResult.iv,
+        authTag: envelopeResult.authTag,
+        kmsKeyId: envelopeResult.kmsKeyId,
+        encryptionAlgorithm: envelopeResult.encryptionAlgorithm,
+        encryptionVersion: envelopeResult.encryptionVersion,
         course,
         department,
         certificateType,
@@ -268,7 +283,9 @@ export async function POST(req: Request) {
       cryptographicSeal: {
         canonicalHash,
         digitalSignature,
-        publicKeyFingerprint: instKey.publicKeyFingerprint
+        publicKeyFingerprint: instKey.publicKeyFingerprint,
+        kmsKeyId: envelopeResult.kmsKeyId,
+        encryptionAlgorithm: envelopeResult.encryptionAlgorithm
       }
     });
   } catch (error: any) {

@@ -29,7 +29,8 @@ test('7-State Verification - VERIFICATION_UNAVAILABLE State Check', async () => 
 });
 
 test('Controlled Demo Tamper Simulator - Breach & Restore Flow', async () => {
-  // 1. Verify pristine status
+  // 1. Ensure pristine status
+  await restoreDemoLedgerIntegrity();
   const initialCheck = await verifyLedgerIntegrity();
   assert.equal(initialCheck.isValid, true, 'Initial ledger must be pristine');
 
