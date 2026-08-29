@@ -184,25 +184,25 @@ model Certificate {
   publicId             String               @unique // e.g. CERT-2026-000123
   institutionId        String
   institution          Institution          @relation(fields: [institutionId], references: [id])
-  studentName          String
-  studentRollNo        String
-  encryptedStudentData String?              // Deprecated legacy field / backup
-  encryptedPayload     String?              // AES-256-GCM encrypted payload ciphertext
+  studentName          String?              // Protected Envelope Source: Nullified in DB plaintext column
+  studentRollNo        String?              // Protected Envelope Source: Nullified in DB plaintext column
+  encryptedStudentData String?              // Deprecated legacy backup
+  encryptedPayload     String?              // AES-256-GCM encrypted payload ciphertext (AUTHORITATIVE SENSITIVE DATA SOURCE)
   encryptedDEK         String?              // KMS-wrapped per-certificate DEK
   iv                   String?              // Initialization vector / nonce
   authTag              String?              // AES-256-GCM authentication tag
-  kmsKeyId             String?              // KMS Key ID (e.g. local-master-v1 or AWS KMS ARN)
+  kmsKeyId             String?              // KMS Key ID (e.g. local-master-kek-v1)
   encryptionAlgorithm  String?              @default("AES-256-GCM")
   encryptionVersion    String?              @default("v1.0")
-  course               String
-  department           String
-  certificateType      String               // Degree, Diploma, Internship, Transfer Certificate, etc.
+  course               String?              // Protected Envelope Source: Nullified in DB plaintext column
+  department           String?              // Protected Envelope Source: Nullified in DB plaintext column
+  certificateType      String               // Degree, Diploma, Internship, Transfer Certificate, etc. (Non-sensitive indexing routing)
   issueDate            String
   completionDate       String?
   marks                String?
   cgpa                 String?
   graduationYear       String?
-  additionalMetadata   String?              // JSON stringified additional type-specific data
+  additionalMetadata   String?              // Protected Envelope Source: Nullified in DB plaintext column
   canonicalHash        String               // SHA-256 fingerprint
   digitalSignature     String               // Ed25519 signature
   keyVersion           Int                  @default(1)
@@ -220,7 +220,6 @@ model Certificate {
 
   @@index([publicId])
   @@index([institutionId])
-  @@index([studentRollNo])
   @@index([status])
 }
 

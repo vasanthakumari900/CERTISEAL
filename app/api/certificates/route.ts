@@ -11,6 +11,7 @@ import { CertificateIssuanceSchema } from '@/lib/validation/schemas';
 
 export async function GET(req: Request) {
   try {
+    const session = await requireAuth(req);
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status');
     const type = searchParams.get('type');
@@ -19,28 +20,45 @@ export async function GET(req: Request) {
 
     const whereClause: any = {};
 
+    // Restrict query based on authenticated user session role & institution
+    if (session.role !== 'SUPER_ADMIN') {
+      if (session.institutionId) {
+        whereClause.institutionId = session.institutionId;
+      }
+    } else if (institutionIdParam) {
+      whereClause.institutionId = institutionIdParam;
+    }
+
     if (status && status !== 'ALL') {
       whereClause.status = status;
     }
     if (type && type !== 'ALL') {
       whereClause.certificateType = type;
     }
-    if (institutionIdParam) {
-      whereClause.institutionId = institutionIdParam;
-    }
 
     if (query) {
       whereClause.OR = [
         { publicId: { contains: query } },
-        { studentName: { contains: query } },
-        { studentRollNo: { contains: query } },
-        { course: { contains: query } }
+        { certificateType: { contains: query } }
       ];
     }
 
     const certificates = await prisma.certificate.findMany({
       where: whereClause,
-      include: {
+      select: {
+        id: true,
+        publicId: true,
+        institutionId: true,
+        certificateType: true,
+        issueDate: true,
+        canonicalHash: true,
+        digitalSignature: true,
+        status: true,
+        holdReason: true,
+        revocationReason: true,
+        kmsKeyId: true,
+        encryptionAlgorithm: true,
+        createdAt: true,
         institution: {
           select: { officialName: true, shortName: true }
         }
@@ -50,7 +68,8 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ certificates });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const status = error.message?.includes('UNAUTHORIZED') ? 401 : error.message?.includes('FORBIDDEN') ? 403 : 500;
+    return NextResponse.json({ error: error.message || 'Access denied' }, { status });
   }
 }
 
@@ -183,9 +202,24 @@ export async function POST(req: Request) {
     }
 
     // 5. Envelope Encryption with unique 256-bit per-certificate DEK and KMS Wrapping
-    const sensitivePayload = JSON.stringify({ studentName, studentRollNo, course, department, cgpa, marks });
-    const envelopeResult = await encryptEnvelope(sensitivePayload);
+    // Full sensitive payload is encrypted into envelope. Plaintext columns in DB will be NULL.
+    const sensitivePayload = JSON.stringify({
+      studentName,
+      studentRollNo,
+      course,
+      department,
+      certificateType,
+      issueDate,
+      completionDate,
+      marks,
+      cgpa,
+      graduationYear,
+      additionalMetadata,
+      publicId,
+      institutionId: targetInstitutionId
+    });
 
+    const envelopeResult = await encryptEnvelope(sensitivePayload);
     const instCode = institution.shortName || 'NITT';
 
     // Authoritative 14-field canonical payload reconstruction
@@ -216,13 +250,22 @@ export async function POST(req: Request) {
 
     const digitalSignature = signFingerprint(canonicalHash, privateKeyPem);
 
+    // Save Certificate in DB with Authoritative Encrypted Envelope & NULL Plaintext Sensitive Columns
     const certificate = await prisma.certificate.create({
       data: {
         publicId,
         institutionId: targetInstitutionId,
-        studentName,
-        studentRollNo,
-        encryptedStudentData: encryptField(sensitivePayload),
+        // Nullified plaintext sensitive columns for protected storage
+        studentName: null,
+        studentRollNo: null,
+        course: null,
+        department: null,
+        marks: null,
+        cgpa: null,
+        graduationYear: null,
+        additionalMetadata: null,
+        encryptedStudentData: null,
+        // Envelope Encrypted Payload & KMS Wrapped DEK metadata
         encryptedPayload: envelopeResult.encryptedPayload,
         encryptedDEK: envelopeResult.encryptedDEK,
         iv: envelopeResult.iv,
@@ -230,15 +273,9 @@ export async function POST(req: Request) {
         kmsKeyId: envelopeResult.kmsKeyId,
         encryptionAlgorithm: envelopeResult.encryptionAlgorithm,
         encryptionVersion: envelopeResult.encryptionVersion,
-        course,
-        department,
+        // Non-sensitive indexing & routing metadata
         certificateType,
         issueDate,
-        completionDate,
-        marks,
-        cgpa,
-        graduationYear,
-        additionalMetadata: additionalMetadata ? JSON.stringify(additionalMetadata) : null,
         canonicalHash,
         digitalSignature,
         keyVersion: instKey.keyVersion,
@@ -254,7 +291,7 @@ export async function POST(req: Request) {
         canonicalHash,
         digitalSignature,
         changedBy: session.id,
-        changeReason: 'Initial Cryptographic Issuance',
+        changeReason: 'Initial Authoritative Envelope Issuance',
         snapshotData: canonicalPayload
       }
     });
@@ -279,7 +316,18 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      certificate,
+      certificate: {
+        id: certificate.id,
+        publicId: certificate.publicId,
+        institutionId: certificate.institutionId,
+        certificateType: certificate.certificateType,
+        issueDate: certificate.issueDate,
+        status: certificate.status,
+        canonicalHash: certificate.canonicalHash,
+        digitalSignature: certificate.digitalSignature,
+        kmsKeyId: certificate.kmsKeyId,
+        encryptionAlgorithm: certificate.encryptionAlgorithm
+      },
       cryptographicSeal: {
         canonicalHash,
         digitalSignature,

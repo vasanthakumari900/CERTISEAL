@@ -9,7 +9,7 @@ import { importNationalInstitutions } from '../scripts/import-institutions';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seeding CERTX Master Registry with Envelope Encryption & 3-Surface Architecture...');
+  console.log('Seeding CERTX Master Registry with Envelope Encryption & Authoritative Protected Storage...');
 
   // Reset database tables
   await prisma.securityAlert.deleteMany();
@@ -33,7 +33,6 @@ async function main() {
   // Import authoritative national directory dataset
   await importNationalInstitutions();
 
-  // Helper for generating institution with encrypted keypair
   async function createNationalInst(data: {
     publicId: string;
     name: string;
@@ -117,9 +116,7 @@ async function main() {
     return { inst, keyPair, code: data.code };
   }
 
-  // ----------------------------------------------------
-  // SEED INSTITUTIONS
-  // ----------------------------------------------------
+  // Seed Institutions
   const iitMadras = await createNationalInst({
     publicId: 'INST-TN-000101', name: 'Indian Institute of Technology Madras', code: 'IITM',
     type: 'IIT', category: 'Government', year: 1959, website: 'https://iitm.ac.in', email: 'registrar@iitm.ac.in',
@@ -138,9 +135,7 @@ async function main() {
     city: 'Coimbatore', district: 'Coimbatore', state: 'Tamil Nadu', postalCode: '641004', status: 'NOT_ONBOARDED'
   });
 
-  // ----------------------------------------------------
-  // CREATE DEMO USERS WITH BCRYPT HASHES
-  // ----------------------------------------------------
+  // Demo Users
   const defaultPasswordHash = await hashPassword('SIH2026MasterPass!');
 
   const superAdmin = await prisma.user.create({
@@ -163,9 +158,7 @@ async function main() {
     data: { name: 'Rahul Kumar (Student)', email: 'rahul.kumar@student.nit.ac.in', passwordHash: defaultPasswordHash, role: 'STUDENT', institutionId: nitTrichy.inst.id }
   });
 
-  // ----------------------------------------------------
-  // SEED ACCESS APPLICATIONS
-  // ----------------------------------------------------
+  // Seed Access Applications
   console.log('Seeding sample CERTX Access Applications...');
   await prisma.accessApplication.create({
     data: {
@@ -216,9 +209,7 @@ async function main() {
     }
   });
 
-  // ----------------------------------------------------
-  // SEED CERTIFICATES WITH ENVELOPE ENCRYPTION
-  // ----------------------------------------------------
+  // Helper for seeding certificate with Authoritative Encrypted Payload & Nullified Plaintext Columns
   async function seedCert(params: {
     publicId: string;
     institution: any;
@@ -235,6 +226,24 @@ async function main() {
     holdReason?: string;
     revocationReason?: string;
   }) {
+    // 1. Construct full sensitive payload JSON
+    const sensitivePayload = JSON.stringify({
+      studentName: params.studentName,
+      studentRollNo: params.studentRollNo,
+      course: params.course,
+      department: params.department,
+      certificateType: params.certificateType,
+      issueDate: params.issueDate,
+      cgpa: params.cgpa || '',
+      publicId: params.publicId,
+      institutionId: params.institution.id,
+      institutionCode: params.code
+    });
+
+    // 2. Encrypt sensitive payload using AES-256-GCM + unique DEK + KMS wrap
+    const envelopeResult = await encryptEnvelope(sensitivePayload);
+
+    // 3. Construct canonical JSON payload for SHA-256 fingerprinting
     const canonicalPayload = buildCertificateCanonicalPayload({
       certificateId: params.publicId,
       institutionId: params.institution.id,
@@ -251,16 +260,22 @@ async function main() {
     const canonicalHash = require('crypto').createHash('sha256').update(canonicalPayload, 'utf8').digest('hex');
     const digitalSignature = signFingerprint(canonicalHash, params.privateKey);
 
-    const sensitivePayload = JSON.stringify({ studentName: params.studentName, studentRollNo: params.studentRollNo, cgpa: params.cgpa });
-    const envelopeResult = await encryptEnvelope(sensitivePayload);
-
+    // 4. Create Certificate Record in DB with Authoritative Envelope and NULL plaintext sensitive columns
     const cert = await prisma.certificate.create({
       data: {
         publicId: params.publicId,
         institutionId: params.institution.id,
-        studentName: params.studentName,
-        studentRollNo: params.studentRollNo,
-        encryptedStudentData: encryptField(sensitivePayload),
+        // Sensitive columns set to null in DB to enforce protected envelope storage
+        studentName: null,
+        studentRollNo: null,
+        course: null,
+        department: null,
+        marks: null,
+        cgpa: null,
+        graduationYear: null,
+        additionalMetadata: null,
+        encryptedStudentData: null,
+        // Authoritative KMS Envelope Encrypted Payload & DEK fields
         encryptedPayload: envelopeResult.encryptedPayload,
         encryptedDEK: envelopeResult.encryptedDEK,
         iv: envelopeResult.iv,
@@ -268,11 +283,9 @@ async function main() {
         kmsKeyId: envelopeResult.kmsKeyId,
         encryptionAlgorithm: envelopeResult.encryptionAlgorithm,
         encryptionVersion: envelopeResult.encryptionVersion,
-        course: params.course,
-        department: params.department,
+        // Non-sensitive indexing & routing metadata
         certificateType: params.certificateType,
         issueDate: params.issueDate,
-        cgpa: params.cgpa,
         canonicalHash,
         digitalSignature,
         status: params.status,
@@ -290,7 +303,7 @@ async function main() {
         canonicalHash,
         digitalSignature,
         changedBy: 'Dr. Priya Sharma',
-        changeReason: 'Initial Cryptographic Envelope Issuance',
+        changeReason: 'Initial Authoritative Envelope Issuance',
         snapshotData: canonicalPayload
       }
     });
@@ -306,7 +319,7 @@ async function main() {
     return cert;
   }
 
-  console.log('Seeding demo certificates for all 7 lifecycle states...');
+  console.log('Seeding demo certificates with zero plaintext database persistence...');
 
   await seedCert({
     publicId: 'CERT-2026-000123',
@@ -368,7 +381,7 @@ async function main() {
     revocationReason: 'Official cancellation due to academic misconduct and falsified project submission'
   });
 
-  console.log('Seeding completed successfully with envelope encryption, DEKs, and 3-surface data!');
+  console.log('Seeding completed successfully with zero plaintext sensitive certificate columns!');
 }
 
 main()
